@@ -135,6 +135,18 @@ public class Joystick : MonoBehaviour, IPointerDownHandler, IDragHandler, IPoint
         handle.anchoredPosition = Vector2.zero;
     }
 
+    // Clears the cached input and re-centers the handle without simulating
+    // pointer events. Safe to call while the joystick GameObject is disabled.
+    public void ResetJoystick()
+    {
+        input = Vector2.zero;
+
+        if (handle != null)
+        {
+            handle.anchoredPosition = Vector2.zero;
+        }
+    }
+
     protected Vector2 ScreenPointToAnchoredPosition(Vector2 screenPosition)
     {
         Vector2 localPoint = Vector2.zero;

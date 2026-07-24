@@ -30,6 +30,7 @@ public sealed class PlayerMovement : MonoBehaviour
     private float verticalVelocity;
 
     private bool movementEnabled = true;
+    private bool waitingForJoystickNeutral;
 
     private void Awake()
     {
@@ -63,6 +64,19 @@ public sealed class PlayerMovement : MonoBehaviour
         }
 
         Vector2 input = ReadJoystickInput();
+
+        if (waitingForJoystickNeutral)
+        {
+            if (input.sqrMagnitude <= 0f)
+            {
+                waitingForJoystickNeutral = false;
+            }
+            else
+            {
+                input = Vector2.zero;
+            }
+        }
+
         Vector3 desiredDirection = CalculateCameraRelativeDirection(input);
 
         UpdateHorizontalVelocity(desiredDirection, input.magnitude, deltaTime);
@@ -222,6 +236,14 @@ public sealed class PlayerMovement : MonoBehaviour
             planarVelocity = Vector3.zero;
             IsMoving = false;
             NormalizedSpeed = 0f;
+            waitingForJoystickNeutral = false;
+        }
+        else
+        {
+            // Ignore any stale/held joystick input until it reports neutral at
+            // least once, so a throw doesn't cause the player to keep moving
+            // in the direction that was held before aiming started.
+            waitingForJoystickNeutral = true;
         }
     }
 }

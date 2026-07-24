@@ -19,11 +19,17 @@ public sealed class PlayerBallPickup : MonoBehaviour
     public bool HasBall => HeldBall != null;
 
     private SphereCollider pickupCollider;
+    private Joystick fixedJoystickComponent;
 
     private void Awake()
     {
         pickupCollider = GetComponent<SphereCollider>();
         pickupCollider.isTrigger = true;
+
+        if (fixedJoystick != null)
+        {
+            fixedJoystickComponent = fixedJoystick.GetComponent<Joystick>();
+        }
 
         if (aimUIRoot != null)
         {
@@ -66,6 +72,11 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
         if (fixedJoystick != null)
         {
+            if (fixedJoystickComponent != null)
+            {
+                fixedJoystickComponent.ResetJoystick();
+            }
+
             fixedJoystick.SetActive(false);
         }
 
@@ -102,6 +113,11 @@ public sealed class PlayerBallPickup : MonoBehaviour
         if (fixedJoystick != null)
         {
             fixedJoystick.SetActive(true);
+
+            if (fixedJoystickComponent != null)
+            {
+                fixedJoystickComponent.ResetJoystick();
+            }
         }
 
         playerMovement.SetMovementEnabled(true);
