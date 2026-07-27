@@ -7,24 +7,59 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     [SerializeField] private Transform target;
     [SerializeField] private MobileLookArea lookArea;
 
-    [Header("Distance")]
-    [SerializeField, Min(0.1f)] private float normalDistance = 4.5f;
-    [SerializeField, Min(0.1f)] private float aimDistance = 4f;
+    [Header("Normal Camera")]
+    [SerializeField, Min(0.1f)]
+    private float normalDistance = 4.5f;
 
-    [Header("Look Target")]
+    [Tooltip("X = right/left, Y = up/down, Z = forward/back.")]
     [SerializeField]
-    private Vector3 lookOffset =
+    private Vector3 normalPositionOffset = Vector3.zero;
+
+    [SerializeField]
+    private Vector3 normalLookOffset =
         new Vector3(0f, 0.5f, 0f);
 
+    [Tooltip("Extra visual rotation. Does not change camera position.")]
+    [SerializeField]
+    private Vector3 normalRotationOffset = Vector3.zero;
+
+    [Header("Aim Camera")]
+    [SerializeField, Min(0.1f)]
+    private float aimDistance = 3.5f;
+
+    [Tooltip("X = right/left, Y = up/down, Z = forward/back.")]
+    [SerializeField]
+    private Vector3 aimPositionOffset =
+        new Vector3(0.8f, -0.35f, 0f);
+
+    [SerializeField]
+    private Vector3 aimLookOffset =
+        new Vector3(0f, 0.8f, 0.8f);
+
+    [Tooltip("Extra visual rotation. Does not change camera position.")]
+    [SerializeField]
+    private Vector3 aimRotationOffset =
+        new Vector3(-3f, 0f, 0f);
+
     [Header("Orbit")]
-    [SerializeField] private float startingPitch = 18f;
-    [SerializeField] private float minimumPitch = 5f;
-    [SerializeField] private float maximumPitch = 55f;
+    [SerializeField]
+    private float startingPitch = 18f;
+
+    [SerializeField]
+    private float minimumPitch = 5f;
+
+    [SerializeField]
+    private float maximumPitch = 55f;
 
     [Header("Touch Sensitivity")]
-    [SerializeField, Min(1f)] private float yawDegreesPerScreen = 180f;
-    [SerializeField, Min(1f)] private float pitchDegreesPerScreen = 80f;
-    [SerializeField] private bool invertVertical;
+    [SerializeField, Min(1f)]
+    private float yawDegreesPerScreen = 180f;
+
+    [SerializeField, Min(1f)]
+    private float pitchDegreesPerScreen = 80f;
+
+    [SerializeField]
+    private bool invertVertical;
 
     [Header("Smoothing")]
     [SerializeField, Range(0.01f, 0.3f)]
@@ -89,6 +124,13 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
         float deltaTime = Time.deltaTime;
 
+        UpdateOrbit(deltaTime);
+        UpdateCameraPosition(deltaTime);
+        UpdateCameraRotation();
+    }
+
+    private void UpdateOrbit(float deltaTime)
+    {
         currentYaw = Mathf.SmoothDampAngle(
             currentYaw,
             targetYaw,
@@ -106,10 +148,17 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             Mathf.Infinity,
             deltaTime
         );
+    }
 
+    private void UpdateCameraPosition(float deltaTime)
+    {
         float distance = isAimMode
             ? aimDistance
             : normalDistance;
+
+        Vector3 positionOffset = isAimMode
+            ? aimPositionOffset
+            : normalPositionOffset;
 
         Quaternion orbitRotation = Quaternion.Euler(
             currentPitch,
@@ -117,9 +166,18 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             0f
         );
 
+        // Position offset follows horizontal camera rotation only.
+        // Looking up/down will not move the shoulder offset.
+        Quaternion yawRotation = Quaternion.Euler(
+            0f,
+            currentYaw,
+            0f
+        );
+
         Vector3 desiredPosition =
             target.position +
-            orbitRotation * Vector3.back * distance;
+            orbitRotation * Vector3.back * distance +
+            yawRotation * positionOffset;
 
         float positionBlend =
             1f - Mathf.Exp(-positionSharpness * deltaTime);
@@ -129,22 +187,44 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             desiredPosition,
             positionBlend
         );
+    }
+
+    private void UpdateCameraRotation()
+    {
+        Vector3 lookOffset = isAimMode
+            ? aimLookOffset
+            : normalLookOffset;
+
+        Vector3 rotationOffset = isAimMode
+            ? aimRotationOffset
+            : normalRotationOffset;
+
+        Quaternion yawRotation = Quaternion.Euler(
+            0f,
+            currentYaw,
+            0f
+        );
 
         Vector3 lookPosition =
-            target.position + lookOffset;
+            target.position +
+            yawRotation * lookOffset;
 
         Vector3 lookDirection =
             lookPosition - cachedTransform.position;
 
-        if (lookDirection.sqrMagnitude > 0.0001f)
+        if (lookDirection.sqrMagnitude <= 0.0001f)
         {
-            // No second rotation smoothing.
-            // Smoothed orbit angles already provide smooth rotation.
-            cachedTransform.rotation = Quaternion.LookRotation(
-                lookDirection,
-                Vector3.up
-            );
+            return;
         }
+
+        Quaternion lookRotation = Quaternion.LookRotation(
+            lookDirection,
+            Vector3.up
+        );
+
+        // Rotation offset changes only rotation, not camera position.
+        cachedTransform.rotation =
+            lookRotation * Quaternion.Euler(rotationOffset);
     }
 
     private void ReadLookInput()
@@ -183,7 +263,6 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             maximumPitch
         );
 
-        // Prevent unnecessarily large accumulated angles.
         if (targetYaw > 360f || targetYaw < -360f)
         {
             targetYaw %= 360f;
@@ -213,28 +292,28 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             ? aimDistance
             : normalDistance;
 
+        Vector3 positionOffset = isAimMode
+            ? aimPositionOffset
+            : normalPositionOffset;
+
         Quaternion orbitRotation = Quaternion.Euler(
             currentPitch,
             currentYaw,
             0f
         );
 
+        Quaternion yawRotation = Quaternion.Euler(
+            0f,
+            currentYaw,
+            0f
+        );
+
         cachedTransform.position =
             target.position +
-            orbitRotation * Vector3.back * distance;
+            orbitRotation * Vector3.back * distance +
+            yawRotation * positionOffset;
 
-        Vector3 lookDirection =
-            target.position +
-            lookOffset -
-            cachedTransform.position;
-
-        if (lookDirection.sqrMagnitude > 0.0001f)
-        {
-            cachedTransform.rotation = Quaternion.LookRotation(
-                lookDirection,
-                Vector3.up
-            );
-        }
+        UpdateCameraRotation();
     }
 
     private void CheckScreenSize()

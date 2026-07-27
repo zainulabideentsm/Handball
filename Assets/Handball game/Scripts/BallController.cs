@@ -3,6 +3,7 @@ using UnityEngine;
 public enum BallState
 {
     Free,
+    PickupPending,
     Held,
     Thrown
 }
@@ -11,27 +12,47 @@ public enum BallState
 [RequireComponent(typeof(Rigidbody))]
 public sealed class BallController : MonoBehaviour
 {
+    [Header("References")]
     [SerializeField] private Collider ballCollider;
 
     [Header("Ground Detection")]
     [SerializeField] private LayerMask groundLayers = ~0;
-    [SerializeField, Range(0f, 1f)] private float groundNormalThreshold = 0.5f;
+
+    [SerializeField, Range(0f, 1f)]
+    private float groundNormalThreshold = 0.5f;
 
     [Header("Rolling")]
-    [SerializeField, Min(0f)] private float groundLinearDeceleration = 2.5f;
-    [SerializeField, Min(0f)] private float groundAngularDeceleration = 5f;
-    [SerializeField, Min(0f)] private float settleLinearSpeed = 0.35f;
-    [SerializeField, Min(0f)] private float settleDuration = 0.6f;
-    [SerializeField, Min(0f)] private float maximumGroundRollTime = 3f;
+    [SerializeField, Min(0f)]
+    private float groundLinearDeceleration = 2.5f;
+
+    [SerializeField, Min(0f)]
+    private float groundAngularDeceleration = 5f;
+
+    [SerializeField, Min(0f)]
+    private float settleLinearSpeed = 0.35f;
+
+    [SerializeField, Min(0f)]
+    private float settleDuration = 0.6f;
+
+    [SerializeField, Min(0f)]
+    private float maximumGroundRollTime = 3f;
 
     [Header("Pickup")]
-    [SerializeField, Min(0f)] private float maximumPickupSpeed = 3f;
-    [SerializeField, Min(0f)] private float pickupCooldownAfterThrow = 0.25f;
+    [SerializeField, Min(0f)]
+    private float maximumPickupSpeed = 3f;
+
+    [SerializeField, Min(0f)]
+    private float pickupCooldownAfterThrow = 0.25f;
 
     public BallState CurrentState { get; private set; } = BallState.Free;
 
     private Rigidbody ballRigidbody;
     private Transform cachedTransform;
+    private Transform currentHoldPoint;
+
+    private RigidbodyInterpolation defaultInterpolation;
+    private CollisionDetectionMode defaultCollisionDetection;
+
     private bool isGrounded;
     private float lowSpeedTimer;
     private float groundedTimer;
@@ -42,15 +63,32 @@ public sealed class BallController : MonoBehaviour
         ballRigidbody = GetComponent<Rigidbody>();
         cachedTransform = transform;
 
+        defaultInterpolation = ballRigidbody.interpolation;
+        defaultCollisionDetection =
+            ballRigidbody.collisionDetectionMode;
+
         if (ballCollider == null)
         {
             ballCollider = GetComponent<Collider>();
         }
     }
 
-    public bool TryPickUp(Transform holdPoint)
+    private void LateUpdate()
     {
-        if (holdPoint == null || CurrentState == BallState.Held)
+        if (CurrentState != BallState.Held ||
+            currentHoldPoint == null)
+        {
+            return;
+        }
+
+        cachedTransform.localPosition = Vector3.zero;
+        cachedTransform.localRotation = Quaternion.identity;
+    }
+
+    public bool TryBeginPickup()
+    {
+        if (CurrentState == BallState.Held ||
+            CurrentState == BallState.PickupPending)
         {
             return false;
         }
@@ -60,9 +98,12 @@ public sealed class BallController : MonoBehaviour
             bool cooldownElapsed =
                 Time.time - throwTimestamp >= pickupCooldownAfterThrow;
 
+            float maximumSpeedSquared =
+                maximumPickupSpeed * maximumPickupSpeed;
+
             bool slowEnough =
                 ballRigidbody.linearVelocity.sqrMagnitude <=
-                maximumPickupSpeed * maximumPickupSpeed;
+                maximumSpeedSquared;
 
             if (!cooldownElapsed || !slowEnough)
             {
@@ -70,28 +111,47 @@ public sealed class BallController : MonoBehaviour
             }
         }
 
-        CurrentState = BallState.Held;
+        CurrentState = BallState.PickupPending;
 
-        ballRigidbody.linearVelocity = Vector3.zero;
-        ballRigidbody.angularVelocity = Vector3.zero;
+        ResetMovement();
+        ResetGroundState();
 
-        ballRigidbody.isKinematic = true;
+        ballRigidbody.Sleep();
         ballRigidbody.useGravity = false;
+        ballRigidbody.detectCollisions = false;
+        ballRigidbody.isKinematic = true;
+        ballRigidbody.interpolation = RigidbodyInterpolation.None;
 
         if (ballCollider != null)
         {
             ballCollider.enabled = false;
         }
 
-        cachedTransform.SetParent(holdPoint, false);
+        return true;
+    }
+
+    public bool AttachToHoldPoint(Transform holdPoint)
+    {
+        if (CurrentState != BallState.PickupPending ||
+            holdPoint == null)
+        {
+            return false;
+        }
+
+        currentHoldPoint = holdPoint;
+        CurrentState = BallState.Held;
+
+        cachedTransform.SetParent(currentHoldPoint, false);
         cachedTransform.localPosition = Vector3.zero;
         cachedTransform.localRotation = Quaternion.identity;
 
-        isGrounded = false;
-        lowSpeedTimer = 0f;
-        groundedTimer = 0f;
-
         return true;
+    }
+
+    public bool TryPickUp(Transform holdPoint)
+    {
+        return TryBeginPickup() &&
+               AttachToHoldPoint(holdPoint);
     }
 
     public void Throw(Vector3 launchVelocity, Vector3 spin)
@@ -102,32 +162,40 @@ public sealed class BallController : MonoBehaviour
         }
 
         cachedTransform.SetParent(null, true);
-
-        ballRigidbody.isKinematic = false;
-        ballRigidbody.useGravity = true;
+        currentHoldPoint = null;
 
         if (ballCollider != null)
         {
             ballCollider.enabled = true;
         }
 
+        ballRigidbody.isKinematic = false;
+        ballRigidbody.useGravity = true;
+        ballRigidbody.detectCollisions = true;
+        ballRigidbody.interpolation = defaultInterpolation;
+        ballRigidbody.collisionDetectionMode =
+            defaultCollisionDetection;
+
+        ResetGroundState();
+
+        throwTimestamp = Time.time;
+        CurrentState = BallState.Thrown;
+
+        ballRigidbody.WakeUp();
         ballRigidbody.linearVelocity = launchVelocity;
         ballRigidbody.angularVelocity = spin;
-
-        isGrounded = false;
-        lowSpeedTimer = 0f;
-        groundedTimer = 0f;
-        throwTimestamp = Time.time;
-
-        CurrentState = BallState.Thrown;
     }
 
     public void MakeAvailable()
     {
-        if (CurrentState != BallState.Held)
+        if (CurrentState == BallState.Held ||
+            CurrentState == BallState.PickupPending)
         {
-            CurrentState = BallState.Free;
+            return;
         }
+
+        CurrentState = BallState.Free;
+        currentHoldPoint = null;
     }
 
     private void OnCollisionEnter(Collision collision)
@@ -142,15 +210,15 @@ public sealed class BallController : MonoBehaviour
 
     private void OnCollisionExit(Collision collision)
     {
-        isGrounded = false;
+        if (IsGroundLayer(collision.gameObject.layer))
+        {
+            isGrounded = false;
+        }
     }
 
     private void EvaluateGroundContact(Collision collision)
     {
-        // Layer mask left at "Everything" by default; restrict it in the
-        // Inspector to only the floor if other surfaces should never count.
-        if (groundLayers.value != 0 &&
-            (groundLayers.value & (1 << collision.gameObject.layer)) == 0)
+        if (!IsGroundLayer(collision.gameObject.layer))
         {
             return;
         }
@@ -159,12 +227,19 @@ public sealed class BallController : MonoBehaviour
 
         for (int i = 0; i < contactCount; i++)
         {
-            if (collision.GetContact(i).normal.y >= groundNormalThreshold)
+            ContactPoint contact = collision.GetContact(i);
+
+            if (contact.normal.y >= groundNormalThreshold)
             {
                 isGrounded = true;
                 return;
             }
         }
+    }
+
+    private bool IsGroundLayer(int layer)
+    {
+        return (groundLayers.value & (1 << layer)) != 0;
     }
 
     private void FixedUpdate()
@@ -176,19 +251,25 @@ public sealed class BallController : MonoBehaviour
 
         if (!isGrounded)
         {
-            // Airborne: no artificial braking, timers only count grounded time.
             lowSpeedTimer = 0f;
             groundedTimer = 0f;
             return;
         }
 
+        float fixedDeltaTime = Time.fixedDeltaTime;
+
         Vector3 velocity = ballRigidbody.linearVelocity;
-        Vector3 planarVelocity = new Vector3(velocity.x, 0f, velocity.z);
+
+        Vector3 planarVelocity = new Vector3(
+            velocity.x,
+            0f,
+            velocity.z
+        );
 
         planarVelocity = Vector3.MoveTowards(
             planarVelocity,
             Vector3.zero,
-            groundLinearDeceleration * Time.fixedDeltaTime
+            groundLinearDeceleration * fixedDeltaTime
         );
 
         ballRigidbody.linearVelocity = new Vector3(
@@ -200,14 +281,17 @@ public sealed class BallController : MonoBehaviour
         ballRigidbody.angularVelocity = Vector3.MoveTowards(
             ballRigidbody.angularVelocity,
             Vector3.zero,
-            groundAngularDeceleration * Time.fixedDeltaTime
+            groundAngularDeceleration * fixedDeltaTime
         );
 
-        groundedTimer += Time.fixedDeltaTime;
+        groundedTimer += fixedDeltaTime;
 
-        if (planarVelocity.magnitude <= settleLinearSpeed)
+        float settleSpeedSquared =
+            settleLinearSpeed * settleLinearSpeed;
+
+        if (planarVelocity.sqrMagnitude <= settleSpeedSquared)
         {
-            lowSpeedTimer += Time.fixedDeltaTime;
+            lowSpeedTimer += fixedDeltaTime;
         }
         else
         {
@@ -217,15 +301,30 @@ public sealed class BallController : MonoBehaviour
         if (lowSpeedTimer >= settleDuration ||
             groundedTimer >= maximumGroundRollTime)
         {
-            ballRigidbody.linearVelocity = Vector3.zero;
-            ballRigidbody.angularVelocity = Vector3.zero;
-            ballRigidbody.Sleep();
-
-            isGrounded = false;
-            lowSpeedTimer = 0f;
-            groundedTimer = 0f;
-
-            CurrentState = BallState.Free;
+            SettleBall();
         }
+    }
+
+    private void SettleBall()
+    {
+        ResetMovement();
+        ballRigidbody.Sleep();
+
+        ResetGroundState();
+
+        CurrentState = BallState.Free;
+    }
+
+    private void ResetMovement()
+    {
+        ballRigidbody.linearVelocity = Vector3.zero;
+        ballRigidbody.angularVelocity = Vector3.zero;
+    }
+
+    private void ResetGroundState()
+    {
+        isGrounded = false;
+        lowSpeedTimer = 0f;
+        groundedTimer = 0f;
     }
 }

@@ -6,6 +6,7 @@ public sealed class PlayerBallPickup : MonoBehaviour
 {
     [Header("Player References")]
     [SerializeField] private PlayerMovement playerMovement;
+    [SerializeField] private PlayerAnimationController animationController;
     [SerializeField] private Transform ballHoldPoint;
 
     [Header("UI References")]
@@ -17,7 +18,9 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
     public BallController HeldBall { get; private set; }
     public bool HasBall => HeldBall != null;
+    public bool IsPickingUp => pendingBall != null;
 
+    private BallController pendingBall;
     private SphereCollider pickupCollider;
     private Joystick fixedJoystickComponent;
 
@@ -28,23 +31,16 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
         if (fixedJoystick != null)
         {
-            fixedJoystickComponent = fixedJoystick.GetComponent<Joystick>();
+            fixedJoystickComponent =
+                fixedJoystick.GetComponent<Joystick>();
         }
 
-        if (aimUIRoot != null)
-        {
-            aimUIRoot.SetActive(false);
-        }
-
-        if (trajectoryPreview != null)
-        {
-            trajectoryPreview.SetActive(false);
-        }
+        SetAimVisuals(false);
     }
 
     private void OnTriggerEnter(Collider other)
     {
-        if (HasBall)
+        if (HasBall || IsPickingUp)
         {
             return;
         }
@@ -52,74 +48,91 @@ public sealed class PlayerBallPickup : MonoBehaviour
         BallController ball =
             other.GetComponentInParent<BallController>();
 
-        if (ball == null)
+        if (ball == null || !ball.TryBeginPickup())
         {
             return;
         }
 
-        if (!ball.TryPickUp(ballHoldPoint))
+        pendingBall = ball;
+
+        // Must happen before movement is disabled so the script can
+        // correctly choose PickUp or RunningPickup.
+        if (animationController != null)
         {
-            return;
+            animationController.PlayPickup();
         }
 
-        HeldBall = ball;
-        EnterAimMode();
+        BeginPickupSequence();
     }
 
-    private void EnterAimMode()
+    private void BeginPickupSequence()
     {
-        playerMovement.SetMovementEnabled(false);
+        if (playerMovement != null)
+        {
+            playerMovement.SetMovementEnabled(false);
+        }
 
         if (fixedJoystick != null)
         {
-            if (fixedJoystickComponent != null)
-            {
-                fixedJoystickComponent.ResetJoystick();
-            }
-
+            fixedJoystickComponent?.ResetJoystick();
             fixedJoystick.SetActive(false);
         }
 
-        if (aimUIRoot != null)
-        {
-            aimUIRoot.SetActive(true);
-        }
+        SetAimVisuals(false);
 
-        if (trajectoryPreview != null)
-        {
-            trajectoryPreview.SetActive(true);
-        }
-
-        // Prevent repeated pickup events while holding the ball.
         pickupCollider.enabled = false;
+    }
+
+    // Called by an Animation Event.
+    public void AttachPendingBall()
+    {
+        if (pendingBall == null)
+        {
+            return;
+        }
+
+        if (!pendingBall.AttachToHoldPoint(ballHoldPoint))
+        {
+            return;
+        }
+
+        HeldBall = pendingBall;
+        pendingBall = null;
+
+        SetAimVisuals(true);
     }
 
     public void CompleteThrow()
     {
         HeldBall = null;
+        pendingBall = null;
 
         pickupCollider.enabled = true;
 
-        if (aimUIRoot != null)
-        {
-            aimUIRoot.SetActive(false);
-        }
-
-        if (trajectoryPreview != null)
-        {
-            trajectoryPreview.SetActive(false);
-        }
+        SetAimVisuals(false);
 
         if (fixedJoystick != null)
         {
             fixedJoystick.SetActive(true);
-
-            if (fixedJoystickComponent != null)
-            {
-                fixedJoystickComponent.ResetJoystick();
-            }
+            fixedJoystickComponent?.ResetJoystick();
         }
 
-        playerMovement.SetMovementEnabled(true);
+        if (playerMovement != null)
+        {
+            playerMovement.SetMovementEnabled(true);
+        }
+    }
+
+    private void SetAimVisuals(bool visible)
+    {
+        if (aimUIRoot != null)
+        {
+            aimUIRoot.SetActive(visible);
+        }
+
+        if (trajectoryPreview != null)
+        {
+            trajectoryPreview.SetActive(visible);
+        }
     }
 }

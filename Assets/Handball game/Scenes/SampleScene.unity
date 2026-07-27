@@ -689,8 +689,13 @@ MonoBehaviour:
   target: {fileID: 1835009042}
   lookArea: {fileID: 139490806}
   normalDistance: 3
-  aimDistance: 4.5
-  lookOffset: {x: 0, y: 0.2, z: 0}
+  normalPositionOffset: {x: 0, y: 0, z: 0}
+  normalLookOffset: {x: 0, y: 0.5, z: 0}
+  normalRotationOffset: {x: 0, y: 0, z: 0}
+  aimDistance: 1.7
+  aimPositionOffset: {x: 2, y: 0.4, z: 0}
+  aimLookOffset: {x: 0, y: 0.8, z: 0.8}
+  aimRotationOffset: {x: -3, y: 0, z: 0}
   startingPitch: 18
   minimumPitch: 5
   maximumPitch: 60
@@ -950,11 +955,11 @@ Transform:
   m_GameObject: {fileID: 462735036}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.133, z: 0.388}
+  m_LocalPosition: {x: -0.001, y: 0.001, z: 0.088}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 543450653444833400}
+  m_Father: {fileID: 1852576806798760027}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &566198137
 GameObject:
@@ -1031,6 +1036,83 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 566198137}
   m_CullTransparentMesh: 1
+--- !u!1 &697018883
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 697018886}
+  - component: {fileID: 697018885}
+  - component: {fileID: 697018884}
+  m_Layer: 0
+  m_Name: Animator_Backup
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &697018884
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 697018883}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0be69e5ecf16aac48b79ff2d94d1154b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  animator: {fileID: 2097895118}
+  playerMovement: {fileID: 919132149443517124}
+  idleToWalkThreshold: 0.08
+  walkToRunThreshold: 0.55
+  runningPickupThreshold: 0.55
+  locomotionDampTime: 0.1
+  minimumWalkPlayback: 0.55
+  maximumWalkPlayback: 1
+  minimumRunPlayback: 0.9
+  maximumRunPlayback: 1.15
+--- !u!95 &697018885
+Animator:
+  serializedVersion: 7
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 697018883}
+  m_Enabled: 1
+  m_Avatar: {fileID: 9000000, guid: dfecd202259071f4e9a7a9a7096ecedb, type: 3}
+  m_Controller: {fileID: 9100000, guid: bc545438e6964e94d809316ea25883ef, type: 2}
+  m_CullingMode: 0
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 0
+  m_LinearVelocityBlending: 0
+  m_StabilizeFeet: 0
+  m_AnimatePhysics: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 1
+  m_AllowConstantClipSamplingOptimization: 1
+  m_KeepAnimatorStateOnDisable: 0
+  m_WriteDefaultValuesOnDisable: 0
+--- !u!4 &697018886
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 697018883}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.43514, y: 0.5, z: -10.69936}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &744538975
 GameObject:
   m_ObjectHideFlags: 0
@@ -1138,7 +1220,7 @@ Transform:
   m_GameObject: {fileID: 895096925}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0.3}
+  m_LocalPosition: {x: 0, y: -0.235, z: 0.3}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1163,8 +1245,8 @@ SphereCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Radius: 0.5
-  m_Center: {x: 0, y: 0.5, z: 0}
+  m_Radius: 0.32500458
+  m_Center: {x: 0.09177637, y: 0.5, z: -0.08321905}
 --- !u!114 &895096928
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1178,6 +1260,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerMovement: {fileID: 919132149443517124}
+  animationController: {fileID: 2097895119}
   ballHoldPoint: {fileID: 462735037}
   fixedJoystick: {fileID: 1203249879}
   aimUIRoot: {fileID: 1041396719}
@@ -2176,6 +2259,7 @@ GameObject:
   - component: {fileID: 2097895117}
   - component: {fileID: 2097895118}
   - component: {fileID: 2097895119}
+  - component: {fileID: 2097895120}
   m_Layer: 0
   m_Name: Animator
   m_TagString: Untagged
@@ -2236,8 +2320,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   animator: {fileID: 2097895118}
   playerMovement: {fileID: 919132149443517124}
-  runningPickupThreshold: 0.15
+  idleToWalkThreshold: 0.08
+  walkToRunThreshold: 0.55
+  runningPickupThreshold: 0.55
   locomotionDampTime: 0.1
+  minimumWalkPlayback: 0.55
+  maximumWalkPlayback: 1
+  minimumRunPlayback: 0.9
+  maximumRunPlayback: 1.15
+--- !u!114 &2097895120
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2097895116}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbb5a40329c6c9140a36e8c10f9fee2a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ballPickup: {fileID: 895096928}
+  throwController: {fileID: 919132149443517126}
 --- !u!1 &2107506597
 GameObject:
   m_ObjectHideFlags: 0
@@ -2612,13 +2716,12 @@ Transform:
   m_GameObject: {fileID: 919132149443517122}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.519, z: -5.13}
+  m_LocalPosition: {x: 0, y: 0.5, z: -5.13}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 2097895117}
   - {fileID: 98423490}
-  - {fileID: 462735037}
   - {fileID: 1835009042}
   - {fileID: 895096926}
   - {fileID: 2021047685}
@@ -2709,9 +2812,10 @@ MonoBehaviour:
   deceleration: 24
   rotationSpeed: 720
   inputDeadZone: 0.1
+  minimumWalkInput: 0.22
+  axisLockRatio: 0.2
   gravity: -25
   groundedForce: -2
-  axisLockRatio: 0.2
 --- !u!114 &919132149443517125
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2744,6 +2848,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ballPickup: {fileID: 895096928}
   aimController: {fileID: 919132149443517125}
+  animationController: {fileID: 2097895119}
   trajectoryPreview: {fileID: 127182007}
   throwOrigin: {fileID: 744538976}
   backspinSpeed: 8
@@ -2973,6 +3078,7 @@ Transform:
   - {fileID: 1189529852718313467}
   - {fileID: 9118793899778424991}
   - {fileID: 8447082966821892973}
+  - {fileID: 462735037}
   m_Father: {fileID: 2563496969336361531}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1862624587970160124
@@ -5016,11 +5122,12 @@ SceneRoots:
   - {fileID: 410087041}
   - {fileID: 832575519}
   - {fileID: 1432896621}
-  - {fileID: 1092722071}
-  - {fileID: 8729101988791188765}
   - {fileID: 543450653444833400}
-  - {fileID: 383270802}
   - {fileID: 2107506602}
+  - {fileID: 383270802}
   - {fileID: 127182006}
   - {fileID: 1302240715}
   - {fileID: 1111777344}
+  - {fileID: 8729101988791188765}
+  - {fileID: 1092722071}
+  - {fileID: 697018886}

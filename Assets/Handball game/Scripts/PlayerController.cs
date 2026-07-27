@@ -9,23 +9,42 @@ public sealed class PlayerMovement : MonoBehaviour
     [SerializeField] private Transform cameraTransform;
 
     [Header("Movement")]
-    [SerializeField, Min(0f)] private float maximumSpeed = 4.5f;
-    [SerializeField, Min(0f)] private float acceleration = 18f;
-    [SerializeField, Min(0f)] private float deceleration = 24f;
-    [SerializeField, Min(0f)] private float rotationSpeed = 720f;
-    [SerializeField, Range(0f, 0.5f)] private float inputDeadZone = 0.1f;
+    [SerializeField, Min(0f)]
+    private float maximumSpeed = 4.5f;
 
-    [Header("Gravity")]
-    [SerializeField] private float gravity = -25f;
-    [SerializeField] private float groundedForce = -2f;
+    [SerializeField, Min(0f)]
+    private float acceleration = 18f;
 
+    [SerializeField, Min(0f)]
+    private float deceleration = 24f;
+
+    [SerializeField, Min(0f)]
+    private float rotationSpeed = 720f;
+
+    [Header("Joystick Response")]
+    [SerializeField, Range(0f, 0.5f)]
+    private float inputDeadZone = 0.12f;
+
+    [Tooltip("Minimum movement amount after the joystick leaves the dead zone.")]
+    [SerializeField, Range(0f, 0.5f)]
+    private float minimumWalkInput = 0.22f;
+
+    [Tooltip("Removes small sideways drift when pushing mostly straight.")]
     [SerializeField, Range(0f, 0.5f)]
     private float axisLockRatio = 0.2f;
+
+    [Header("Gravity")]
+    [SerializeField]
+    private float gravity = -25f;
+
+    [SerializeField]
+    private float groundedForce = -2f;
 
     public bool IsMoving { get; private set; }
     public float NormalizedSpeed { get; private set; }
 
     private CharacterController characterController;
+
     private Vector3 planarVelocity;
     private float verticalVelocity;
 
@@ -77,9 +96,17 @@ public sealed class PlayerMovement : MonoBehaviour
             }
         }
 
-        Vector3 desiredDirection = CalculateCameraRelativeDirection(input);
+        float inputMagnitude = input.magnitude;
 
-        UpdateHorizontalVelocity(desiredDirection, input.magnitude, deltaTime);
+        Vector3 desiredDirection =
+            CalculateCameraRelativeDirection(input);
+
+        UpdateHorizontalVelocity(
+            desiredDirection,
+            inputMagnitude,
+            deltaTime
+        );
+
         UpdateRotation(desiredDirection, deltaTime);
         UpdateGravity(deltaTime);
         MoveCharacter(deltaTime);
@@ -88,11 +115,14 @@ public sealed class PlayerMovement : MonoBehaviour
 
     private Vector2 ReadJoystickInput()
     {
-        Vector2 input = new Vector2( movementJoystick.Horizontal, movementJoystick.Vertical);
+        Vector2 input = new Vector2(
+            movementJoystick.Horizontal,
+            movementJoystick.Vertical
+        );
 
-        float magnitude = input.magnitude;
+        float rawMagnitude = input.magnitude;
 
-        if (magnitude <= inputDeadZone)
+        if (rawMagnitude <= inputDeadZone)
         {
             return Vector2.zero;
         }
@@ -100,26 +130,39 @@ public sealed class PlayerMovement : MonoBehaviour
         float absoluteX = Mathf.Abs(input.x);
         float absoluteY = Mathf.Abs(input.y);
 
-        // Prevent small sideways drift while pushing mostly vertically.
+        // Remove slight horizontal drift when moving mostly vertically.
         if (absoluteX < absoluteY * axisLockRatio)
         {
             input.x = 0f;
         }
-        // Prevent small vertical drift while pushing mostly horizontally.
+        // Remove slight vertical drift when moving mostly horizontally.
         else if (absoluteY < absoluteX * axisLockRatio)
         {
             input.y = 0f;
         }
 
-        magnitude = Mathf.Clamp01(input.magnitude);
+        float adjustedMagnitude =
+            Mathf.Clamp01(input.magnitude);
+
+        if (adjustedMagnitude <= inputDeadZone)
+        {
+            return Vector2.zero;
+        }
 
         float correctedMagnitude = Mathf.InverseLerp(
             inputDeadZone,
             1f,
-            magnitude
+            adjustedMagnitude
         );
 
-        return input.normalized * correctedMagnitude;
+        // Prevent unnaturally slow creeping immediately outside the dead zone.
+        float movementMagnitude = Mathf.Lerp(
+            minimumWalkInput,
+            1f,
+            correctedMagnitude
+        );
+
+        return input.normalized * movementMagnitude;
     }
 
     private Vector3 CalculateCameraRelativeDirection(Vector2 input)
@@ -142,9 +185,10 @@ public sealed class PlayerMovement : MonoBehaviour
             cameraForward * input.y +
             cameraRight * input.x;
 
-        return direction.sqrMagnitude > 1f
+        // Magnitude is handled separately in UpdateHorizontalVelocity.
+        return direction.sqrMagnitude > 0.0001f
             ? direction.normalized
-            : direction;
+            : Vector3.zero;
     }
 
     private void UpdateHorizontalVelocity(
@@ -153,12 +197,15 @@ public sealed class PlayerMovement : MonoBehaviour
         float deltaTime)
     {
         Vector3 targetVelocity =
-            desiredDirection * maximumSpeed * inputMagnitude;
+            desiredDirection *
+            maximumSpeed *
+            inputMagnitude;
 
-        float changeRate = targetVelocity.sqrMagnitude >
-                           planarVelocity.sqrMagnitude
-            ? acceleration
-            : deceleration;
+        float changeRate =
+            targetVelocity.sqrMagnitude >
+            planarVelocity.sqrMagnitude
+                ? acceleration
+                : deceleration;
 
         planarVelocity = Vector3.MoveTowards(
             planarVelocity,
@@ -172,15 +219,19 @@ public sealed class PlayerMovement : MonoBehaviour
         }
     }
 
-    private void UpdateRotation(Vector3 desiredDirection, float deltaTime)
+    private void UpdateRotation(
+        Vector3 desiredDirection,
+        float deltaTime)
     {
         if (desiredDirection.sqrMagnitude <= 0.001f)
         {
             return;
         }
 
-        Quaternion targetRotation =
-            Quaternion.LookRotation(desiredDirection, Vector3.up);
+        Quaternion targetRotation = Quaternion.LookRotation(
+            desiredDirection,
+            Vector3.up
+        );
 
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
@@ -191,7 +242,8 @@ public sealed class PlayerMovement : MonoBehaviour
 
     private void UpdateGravity(float deltaTime)
     {
-        if (characterController.isGrounded && verticalVelocity < 0f)
+        if (characterController.isGrounded &&
+            verticalVelocity < 0f)
         {
             verticalVelocity = groundedForce;
         }
@@ -206,8 +258,9 @@ public sealed class PlayerMovement : MonoBehaviour
         Vector3 finalVelocity = planarVelocity;
         finalVelocity.y = verticalVelocity;
 
-        // Only one CharacterController.Move call per frame.
-        characterController.Move(finalVelocity * deltaTime);
+        characterController.Move(
+            finalVelocity * deltaTime
+        );
     }
 
     private void UpdateMovementData()
@@ -227,23 +280,22 @@ public sealed class PlayerMovement : MonoBehaviour
         IsMoving = false;
         NormalizedSpeed = 0f;
     }
+
     public void SetMovementEnabled(bool enabled)
     {
         movementEnabled = enabled;
+        planarVelocity = Vector3.zero;
+
+        IsMoving = false;
+        NormalizedSpeed = 0f;
 
         if (!enabled)
         {
-            planarVelocity = Vector3.zero;
-            IsMoving = false;
-            NormalizedSpeed = 0f;
             waitingForJoystickNeutral = false;
+            return;
         }
-        else
-        {
-            // Ignore any stale/held joystick input until it reports neutral at
-            // least once, so a throw doesn't cause the player to keep moving
-            // in the direction that was held before aiming started.
-            waitingForJoystickNeutral = true;
-        }
+
+        // Require the joystick to return to neutral after aiming/throwing.
+        waitingForJoystickNeutral = true;
     }
 }
