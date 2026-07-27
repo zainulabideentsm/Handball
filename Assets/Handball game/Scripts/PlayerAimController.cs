@@ -8,29 +8,25 @@ public sealed class PlayerAimController : MonoBehaviour
     [SerializeField] private ThirdPersonCameraFollow followCamera;
     [SerializeField] private Transform aimPivot;
 
-    [Header("Throw Angle")]
-    [Tooltip("Must match the camera's normal starting pitch.")]
-    [SerializeField] private float neutralCameraPitch = 18f;
+    [Header("Throw Elevation")]
+    [SerializeField, Range(0f, 89f)]
+    private float minimumThrowElevation = 18f;
 
     [SerializeField, Range(0f, 89f)]
-    private float maximumUpAngle = 45f;
+    private float maximumThrowElevation = 82f;
 
-    [SerializeField, Range(0f, 89f)]
-    private float maximumDownAngle = 35f;
+    [Tooltip("Below 1 makes the trajectory rise faster during an upward swipe.")]
+    [SerializeField, Range(0.25f, 2f)]
+    private float verticalAimResponse = 0.7f;
 
     public bool IsAiming { get; private set; }
 
-    public float ThrowAngle { get; private set; }
+    public float ThrowElevation { get; private set; }
 
-    public Vector3 AimDirection
-    {
-        get
-        {
-            return aimPivot != null
-                ? aimPivot.forward
-                : transform.forward;
-        }
-    }
+    public Vector3 AimDirection =>
+        aimPivot != null
+            ? aimPivot.forward
+            : transform.forward;
 
     private void Update()
     {
@@ -43,7 +39,9 @@ public sealed class PlayerAimController : MonoBehaviour
             SetAiming(shouldAim);
         }
 
-        if (!IsAiming || followCamera == null)
+        if (!IsAiming ||
+            followCamera == null ||
+            aimPivot == null)
         {
             return;
         }
@@ -57,43 +55,50 @@ public sealed class PlayerAimController : MonoBehaviour
 
         if (followCamera != null)
         {
+            if (enabled)
+            {
+                followCamera.AlignYawTo(
+                    transform.eulerAngles.y,
+                    false
+                );
+            }
+
             followCamera.SetAimMode(enabled);
         }
 
         if (!enabled && aimPivot != null)
         {
-            aimPivot.localRotation = Quaternion.identity;
-            ThrowAngle = 0f;
+            aimPivot.localRotation =
+                Quaternion.identity;
+
+            ThrowElevation = 0f;
         }
     }
 
     private void UpdateAimDirection()
     {
-        // Character faces the camera's horizontal direction.
+        // Horizontal camera drag rotates the character and trajectory.
         transform.rotation = Quaternion.Euler(
             0f,
             followCamera.Yaw,
             0f
         );
 
-        // Camera looking down produces a positive downward throw angle.
-        // Camera looking up produces a negative upward throw angle.
-        float cameraAngleFromNeutral =
-            followCamera.Pitch - neutralCameraPitch;
-
-        ThrowAngle = Mathf.Clamp(
-            cameraAngleFromNeutral,
-            -maximumUpAngle,
-            maximumDownAngle
+        float response = Mathf.Pow(
+            followCamera.AimVertical01,
+            verticalAimResponse
         );
 
-        if (aimPivot != null)
-        {
-            aimPivot.localRotation = Quaternion.Euler(
-                ThrowAngle,
-                0f,
-                0f
-            );
-        }
+        ThrowElevation = Mathf.Lerp(
+            minimumThrowElevation,
+            maximumThrowElevation,
+            response
+        );
+
+        aimPivot.localRotation = Quaternion.Euler(
+            -ThrowElevation,
+            0f,
+            0f
+        );
     }
 }

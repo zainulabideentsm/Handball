@@ -5,13 +5,13 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private Transform target;
+    [SerializeField] private Transform aimLookTarget;
     [SerializeField] private MobileLookArea lookArea;
 
     [Header("Normal Camera")]
     [SerializeField, Min(0.1f)]
     private float normalDistance = 4.5f;
 
-    [Tooltip("X = right/left, Y = up/down, Z = forward/back.")]
     [SerializeField]
     private Vector3 normalPositionOffset = Vector3.zero;
 
@@ -19,60 +19,76 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     private Vector3 normalLookOffset =
         new Vector3(0f, 0.5f, 0f);
 
-    [Tooltip("Extra visual rotation. Does not change camera position.")]
     [SerializeField]
     private Vector3 normalRotationOffset = Vector3.zero;
 
     [Header("Aim Camera")]
     [SerializeField, Min(0.1f)]
-    private float aimDistance = 3.5f;
+    private float aimDistance = 3.4f;
 
-    [Tooltip("X = right/left, Y = up/down, Z = forward/back.")]
+    [Tooltip("Positive X moves the camera right, placing the player left on-screen.")]
     [SerializeField]
     private Vector3 aimPositionOffset =
-        new Vector3(0.8f, -0.35f, 0f);
+        new Vector3(1.1f, -0.2f, 0f);
 
     [SerializeField]
-    private Vector3 aimLookOffset =
-        new Vector3(0f, 0.8f, 0.8f);
+    private Vector3 aimFallbackLookOffset =
+        new Vector3(0f, 1.15f, 4f);
 
-    [Tooltip("Extra visual rotation. Does not change camera position.")]
     [SerializeField]
-    private Vector3 aimRotationOffset =
-        new Vector3(-3f, 0f, 0f);
+    private Vector3 aimRotationOffset = Vector3.zero;
 
-    [Header("Orbit")]
+    [SerializeField, Range(0f, 1f)]
+    private float startingAimVertical = 0.25f;
+
+    [Tooltip("Small visual camera pitch range while aiming.")]
+    [SerializeField]
+    private float minimumAimCameraPitch = 10f;
+
+    [SerializeField]
+    private float maximumAimCameraPitch = 24f;
+
+    [SerializeField, Range(0.01f, 0.5f)]
+    private float cameraModeBlendTime = 0.15f;
+
+    [Header("Normal Orbit")]
     [SerializeField]
     private float startingPitch = 18f;
 
     [SerializeField]
-    private float minimumPitch = 5f;
+    private float minimumNormalPitch = 5f;
 
     [SerializeField]
-    private float maximumPitch = 55f;
+    private float maximumNormalPitch = 45f;
 
     [Header("Touch Sensitivity")]
     [SerializeField, Min(1f)]
     private float yawDegreesPerScreen = 180f;
 
     [SerializeField, Min(1f)]
-    private float pitchDegreesPerScreen = 80f;
+    private float normalPitchDegreesPerScreen = 80f;
+
+    [Tooltip("How much one full-screen vertical swipe changes aiming, from 0 to 1.")]
+    [SerializeField, Min(0.1f)]
+    private float aimVerticalPerScreen = 1.1f;
 
     [SerializeField]
     private bool invertVertical;
 
-    [Header("Smoothing")]
+    [Header("Orbit Smoothing")]
     [SerializeField, Range(0.01f, 0.3f)]
     private float orbitSmoothTime = 0.07f;
-
-    [SerializeField, Min(0.01f)]
-    private float positionSharpness = 18f;
 
     public float Yaw => currentYaw;
     public float Pitch => currentPitch;
 
+    public float AimVertical01 { get; private set; }
+
     private Transform cachedTransform;
+
     private bool isAimMode;
+
+    private float normalTargetPitch;
 
     private float targetYaw;
     private float targetPitch;
@@ -82,6 +98,9 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
     private float yawSmoothVelocity;
     private float pitchSmoothVelocity;
+
+    private float aimBlend;
+    private float aimBlendVelocity;
 
     private int cachedScreenWidth;
     private int cachedScreenHeight;
@@ -95,12 +114,15 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
         targetYaw = target != null
             ? target.eulerAngles.y
-            : transform.eulerAngles.y;
+            : cachedTransform.eulerAngles.y;
 
+        normalTargetPitch = startingPitch;
         targetPitch = startingPitch;
 
         currentYaw = targetYaw;
         currentPitch = targetPitch;
+
+        AimVertical01 = startingAimVertical;
 
         RefreshScreenMetrics();
     }
@@ -124,12 +146,26 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
         float deltaTime = Time.deltaTime;
 
-        UpdateOrbit(deltaTime);
-        UpdateCameraPosition(deltaTime);
-        UpdateCameraRotation();
+        UpdateCameraModeBlend(deltaTime);
+        UpdateOrbitAngles(deltaTime);
+        UpdateCameraTransform();
     }
 
-    private void UpdateOrbit(float deltaTime)
+    private void UpdateCameraModeBlend(float deltaTime)
+    {
+        float desiredBlend = isAimMode ? 1f : 0f;
+
+        aimBlend = Mathf.SmoothDamp(
+            aimBlend,
+            desiredBlend,
+            ref aimBlendVelocity,
+            cameraModeBlendTime,
+            Mathf.Infinity,
+            deltaTime
+        );
+    }
+
+    private void UpdateOrbitAngles(float deltaTime)
     {
         currentYaw = Mathf.SmoothDampAngle(
             currentYaw,
@@ -150,28 +186,30 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         );
     }
 
-    private void UpdateCameraPosition(float deltaTime)
+    private void UpdateCameraTransform()
     {
-        float distance = isAimMode
-            ? aimDistance
-            : normalDistance;
-
-        Vector3 positionOffset = isAimMode
-            ? aimPositionOffset
-            : normalPositionOffset;
-
         Quaternion orbitRotation = Quaternion.Euler(
             currentPitch,
             currentYaw,
             0f
         );
 
-        // Position offset follows horizontal camera rotation only.
-        // Looking up/down will not move the shoulder offset.
         Quaternion yawRotation = Quaternion.Euler(
             0f,
             currentYaw,
             0f
+        );
+
+        float distance = Mathf.Lerp(
+            normalDistance,
+            aimDistance,
+            aimBlend
+        );
+
+        Vector3 positionOffset = Vector3.Lerp(
+            normalPositionOffset,
+            aimPositionOffset,
+            aimBlend
         );
 
         Vector3 desiredPosition =
@@ -179,35 +217,24 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             orbitRotation * Vector3.back * distance +
             yawRotation * positionOffset;
 
-        float positionBlend =
-            1f - Mathf.Exp(-positionSharpness * deltaTime);
+        // Exact follow position prevents lag and wobble while running.
+        cachedTransform.position = desiredPosition;
 
-        cachedTransform.position = Vector3.Lerp(
-            cachedTransform.position,
-            desiredPosition,
-            positionBlend
-        );
-    }
-
-    private void UpdateCameraRotation()
-    {
-        Vector3 lookOffset = isAimMode
-            ? aimLookOffset
-            : normalLookOffset;
-
-        Vector3 rotationOffset = isAimMode
-            ? aimRotationOffset
-            : normalRotationOffset;
-
-        Quaternion yawRotation = Quaternion.Euler(
-            0f,
-            currentYaw,
-            0f
-        );
-
-        Vector3 lookPosition =
+        Vector3 normalLookPosition =
             target.position +
-            yawRotation * lookOffset;
+            yawRotation * normalLookOffset;
+
+        Vector3 aimLookPosition =
+            aimLookTarget != null
+                ? aimLookTarget.position
+                : target.position +
+                  yawRotation * aimFallbackLookOffset;
+
+        Vector3 lookPosition = Vector3.Lerp(
+            normalLookPosition,
+            aimLookPosition,
+            aimBlend
+        );
 
         Vector3 lookDirection =
             lookPosition - cachedTransform.position;
@@ -217,14 +244,20 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             return;
         }
 
+        Vector3 rotationOffset = Vector3.Lerp(
+            normalRotationOffset,
+            aimRotationOffset,
+            aimBlend
+        );
+
         Quaternion lookRotation = Quaternion.LookRotation(
             lookDirection,
             Vector3.up
         );
 
-        // Rotation offset changes only rotation, not camera position.
         cachedTransform.rotation =
-            lookRotation * Quaternion.Euler(rotationOffset);
+            lookRotation *
+            Quaternion.Euler(rotationOffset);
     }
 
     private void ReadLookInput()
@@ -251,17 +284,41 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         float verticalMultiplier =
             invertVertical ? -1f : 1f;
 
-        targetPitch +=
-            dragDelta.y *
-            inverseScreenHeight *
-            pitchDegreesPerScreen *
-            verticalMultiplier;
+        if (isAimMode)
+        {
+            AimVertical01 +=
+                dragDelta.y *
+                inverseScreenHeight *
+                aimVerticalPerScreen *
+                verticalMultiplier;
 
-        targetPitch = Mathf.Clamp(
-            targetPitch,
-            minimumPitch,
-            maximumPitch
-        );
+            AimVertical01 = Mathf.Clamp01(
+                AimVertical01
+            );
+
+            // Camera moves only a little vertically.
+            targetPitch = Mathf.Lerp(
+                minimumAimCameraPitch,
+                maximumAimCameraPitch,
+                AimVertical01
+            );
+        }
+        else
+        {
+            normalTargetPitch +=
+                dragDelta.y *
+                inverseScreenHeight *
+                normalPitchDegreesPerScreen *
+                verticalMultiplier;
+
+            normalTargetPitch = Mathf.Clamp(
+                normalTargetPitch,
+                minimumNormalPitch,
+                maximumNormalPitch
+            );
+
+            targetPitch = normalTargetPitch;
+        }
 
         if (targetYaw > 360f || targetYaw < -360f)
         {
@@ -272,7 +329,40 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
     public void SetAimMode(bool enabled)
     {
+        if (isAimMode == enabled)
+        {
+            return;
+        }
+
         isAimMode = enabled;
+
+        if (enabled)
+        {
+            AimVertical01 = startingAimVertical;
+
+            targetPitch = Mathf.Lerp(
+                minimumAimCameraPitch,
+                maximumAimCameraPitch,
+                AimVertical01
+            );
+        }
+        else
+        {
+            targetPitch = normalTargetPitch;
+        }
+    }
+
+    public void AlignYawTo(float yaw, bool snapImmediately)
+    {
+        targetYaw = yaw;
+
+        if (!snapImmediately)
+        {
+            return;
+        }
+
+        currentYaw = yaw;
+        yawSmoothVelocity = 0f;
     }
 
     public void SnapToTarget()
@@ -288,32 +378,10 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         yawSmoothVelocity = 0f;
         pitchSmoothVelocity = 0f;
 
-        float distance = isAimMode
-            ? aimDistance
-            : normalDistance;
+        aimBlend = isAimMode ? 1f : 0f;
+        aimBlendVelocity = 0f;
 
-        Vector3 positionOffset = isAimMode
-            ? aimPositionOffset
-            : normalPositionOffset;
-
-        Quaternion orbitRotation = Quaternion.Euler(
-            currentPitch,
-            currentYaw,
-            0f
-        );
-
-        Quaternion yawRotation = Quaternion.Euler(
-            0f,
-            currentYaw,
-            0f
-        );
-
-        cachedTransform.position =
-            target.position +
-            orbitRotation * Vector3.back * distance +
-            yawRotation * positionOffset;
-
-        UpdateCameraRotation();
+        UpdateCameraTransform();
     }
 
     private void CheckScreenSize()

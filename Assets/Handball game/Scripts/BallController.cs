@@ -327,4 +327,38 @@ public sealed class BallController : MonoBehaviour
         lowSpeedTimer = 0f;
         groundedTimer = 0f;
     }
+
+    public void ResetToSpawn(
+    Vector3 position,
+    Quaternion rotation)
+    {
+        cachedTransform.SetParent(null, true);
+        currentHoldPoint = null;
+
+        ResetMovement();
+        ResetGroundState();
+
+        if (ballCollider != null)
+        {
+            ballCollider.enabled = true;
+        }
+
+        ballRigidbody.isKinematic = true;
+        ballRigidbody.useGravity = true;
+        ballRigidbody.detectCollisions = true;
+
+        ballRigidbody.interpolation =
+            defaultInterpolation;
+
+        ballRigidbody.collisionDetectionMode =
+            defaultCollisionDetection;
+
+        ballRigidbody.position = position;
+        ballRigidbody.rotation = rotation;
+
+        CurrentState = BallState.Free;
+
+        ballRigidbody.isKinematic = false;
+        ballRigidbody.WakeUp();
+    }
 }
