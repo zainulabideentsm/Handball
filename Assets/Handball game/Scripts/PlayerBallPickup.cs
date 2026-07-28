@@ -5,7 +5,7 @@ using UnityEngine;
 public sealed class PlayerBallPickup : MonoBehaviour
 {
     [Header("Player References")]
-    [SerializeField] private PlayerMovement playerMovement;
+    [SerializeField] private PlayerMovementController playerMovement;
     [SerializeField] private PlayerAnimationController animationController;
     [SerializeField] private Transform ballHoldPoint;
 

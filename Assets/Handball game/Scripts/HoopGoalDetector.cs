@@ -6,119 +6,72 @@ public sealed class HoopGoalDetector : MonoBehaviour
     [Header("References")]
     [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private Transform ballSpawnPoint;
+    [SerializeField] private GoalCelebrationController goalCelebration;
+
+    [Tooltip("Assign this hoop's own confetti Particle System.")]
+    [SerializeField] private ParticleSystem goalParticles;
 
     [Header("Scoring")]
-    [SerializeField, Min(1)]
-    private int pointsPerGoal = 1;
+    [SerializeField, Min(1)] private int pointsPerGoal = 1;
 
-    [Tooltip("Ball must be moving downward.")]
-    [SerializeField, Min(0f)]
-    private float minimumDownwardSpeed = 0.02f;
+    [Tooltip("Maximum time allowed between crossing both goal triggers.")]
+    [SerializeField, Min(0.1f)] private float triggerValidityDuration = 2f;
 
-    [Tooltip("Maximum time between entering the upper and lower triggers.")]
-    [SerializeField, Min(0.1f)]
-    private float entryValidityDuration = 3f;
-
-    [Tooltip("Prevents the same goal being counted more than once.")]
-    [SerializeField, Min(0f)]
-    private float scoreCooldown = 0.5f;
+    [Tooltip("Prevents one shot from scoring repeatedly.")]
+    [SerializeField, Min(0f)] private float scoreCooldown = 0.5f;
 
     [Header("Ball Reset")]
-    [SerializeField, Min(0f)]
-    private float resetDelay = 1.25f;
+    [SerializeField, Min(0f)] private float resetDelay = 1.25f;
 
     private BallController armedBall;
     private BallController scoredBall;
+    private GoalTriggerType firstTrigger;
 
     private float armedUntil;
     private float resetAt;
     private float nextScoreAllowedTime;
 
+    private bool isArmed;
     private bool resetPending;
 
     private void Update()
     {
-        if (armedBall != null &&
-            Time.time > armedUntil)
+        if (isArmed && Time.time > armedUntil)
         {
             ClearArmedBall();
         }
 
-        if (resetPending &&
-            Time.time >= resetAt)
+        if (resetPending && Time.time >= resetAt)
         {
             ResetScoredBall();
         }
     }
 
-    public void NotifyTrigger(
-        GoalTriggerType triggerType,
-        BallController ball)
+    public void NotifyTrigger(GoalTriggerType triggerType, BallController ball)
     {
-        if (ball == null ||
-            resetPending ||
-            Time.time < nextScoreAllowedTime)
+        if (ball == null || resetPending || Time.time < nextScoreAllowedTime)
         {
             return;
         }
 
-        if (ball.CurrentState != BallState.Thrown)
+        if (ball.CurrentState == BallState.Held || ball.CurrentState == BallState.PickupPending)
         {
             return;
         }
 
-        if (!ball.TryGetComponent(
-                out Rigidbody ballRigidbody))
+        if (!isArmed || armedBall != ball)
         {
-            return;
-        }
-
-        if (triggerType == GoalTriggerType.Entry)
-        {
-            HandleEntryTrigger(
-                ball,
-                ballRigidbody
-            );
-
-            return;
-        }
-
-        HandleScoreTrigger(
-            ball,
-            ballRigidbody
-        );
-    }
-
-    private void HandleEntryTrigger(
-        BallController ball,
-        Rigidbody ballRigidbody)
-    {
-        if (!IsMovingDownward(ballRigidbody))
-        {
-            return;
-        }
-
-        armedBall = ball;
-        armedUntil =
-            Time.time + entryValidityDuration;
-    }
-
-    private void HandleScoreTrigger(
-        BallController ball,
-        Rigidbody ballRigidbody)
-    {
-        if (armedBall != ball)
-        {
+            ArmGoal(ball, triggerType);
             return;
         }
 
         if (Time.time > armedUntil)
         {
-            ClearArmedBall();
+            ArmGoal(ball, triggerType);
             return;
         }
 
-        if (!IsMovingDownward(ballRigidbody))
+        if (triggerType == firstTrigger)
         {
             return;
         }
@@ -126,11 +79,12 @@ public sealed class HoopGoalDetector : MonoBehaviour
         ConfirmGoal(ball);
     }
 
-    private bool IsMovingDownward(
-        Rigidbody ballRigidbody)
+    private void ArmGoal(BallController ball, GoalTriggerType triggerType)
     {
-        return ballRigidbody.linearVelocity.y <=
-               -minimumDownwardSpeed;
+        armedBall = ball;
+        firstTrigger = triggerType;
+        armedUntil = Time.time + triggerValidityDuration;
+        isArmed = true;
     }
 
     private void ConfirmGoal(BallController ball)
@@ -139,9 +93,7 @@ public sealed class HoopGoalDetector : MonoBehaviour
 
         ClearArmedBall();
 
-        nextScoreAllowedTime =
-            Time.time + scoreCooldown;
-
+        nextScoreAllowedTime = Time.time + scoreCooldown;
         resetPending = true;
         resetAt = Time.time + resetDelay;
 
@@ -150,12 +102,16 @@ public sealed class HoopGoalDetector : MonoBehaviour
             scoreManager.AddScore(pointsPerGoal);
         }
 
+        if (goalCelebration != null)
+        {
+            goalCelebration.PlayGoalCelebration(goalParticles);
+        }
+
         Debug.Log("GOAL!");
     }
 
     private void ResetScoredBall()
     {
-        // Clear the detector first so it cannot remain permanently locked.
         BallController ballToReset = scoredBall;
 
         scoredBall = null;
@@ -163,18 +119,12 @@ public sealed class HoopGoalDetector : MonoBehaviour
 
         ClearArmedBall();
 
-        if (ballToReset == null ||
-            ballSpawnPoint == null)
+        if (ballToReset == null || ballSpawnPoint == null)
         {
             return;
         }
 
-        ballToReset.ResetToSpawn(
-            ballSpawnPoint.position,
-            ballSpawnPoint.rotation
-        );
-
-        // Updates trigger overlap state after teleporting the ball.
+        ballToReset.ResetToSpawn(ballSpawnPoint.position, ballSpawnPoint.rotation);
         Physics.SyncTransforms();
     }
 
@@ -182,6 +132,7 @@ public sealed class HoopGoalDetector : MonoBehaviour
     {
         armedBall = null;
         armedUntil = 0f;
+        isArmed = false;
     }
 
     private void OnDisable()
@@ -193,6 +144,7 @@ public sealed class HoopGoalDetector : MonoBehaviour
         resetAt = 0f;
         nextScoreAllowedTime = 0f;
 
+        isArmed = false;
         resetPending = false;
     }
 }

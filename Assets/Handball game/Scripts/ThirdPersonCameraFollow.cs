@@ -9,90 +9,76 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     [SerializeField] private MobileLookArea lookArea;
 
     [Header("Normal Camera")]
-    [SerializeField, Min(0.1f)]
-    private float normalDistance = 4.5f;
-
-    [SerializeField]
-    private Vector3 normalPositionOffset = Vector3.zero;
-
-    [SerializeField]
-    private Vector3 normalLookOffset =
-        new Vector3(0f, 0.5f, 0f);
-
-    [SerializeField]
-    private Vector3 normalRotationOffset = Vector3.zero;
+    [SerializeField, Min(0.1f)] private float normalDistance = 4.5f;
+    [SerializeField] private Vector3 normalPositionOffset = Vector3.zero;
+    [SerializeField] private Vector3 normalLookOffset = new Vector3(0f, 0.5f, 0f);
+    [SerializeField] private Vector3 normalRotationOffset = Vector3.zero;
 
     [Header("Aim Camera")]
-    [SerializeField, Min(0.1f)]
-    private float aimDistance = 3.4f;
+    [SerializeField, Min(0.1f)] private float aimDistance = 3.4f;
 
     [Tooltip("Positive X moves the camera right, placing the player left on-screen.")]
-    [SerializeField]
-    private Vector3 aimPositionOffset =
-        new Vector3(1.1f, -0.2f, 0f);
+    [SerializeField] private Vector3 aimPositionOffset = new Vector3(1.1f, -0.2f, 0f);
 
-    [SerializeField]
-    private Vector3 aimFallbackLookOffset =
-        new Vector3(0f, 1.15f, 4f);
+    [SerializeField] private Vector3 aimFallbackLookOffset = new Vector3(0f, 1.15f, 4f);
+    [SerializeField] private Vector3 aimRotationOffset = Vector3.zero;
 
-    [SerializeField]
-    private Vector3 aimRotationOffset = Vector3.zero;
-
-    [SerializeField, Range(0f, 1f)]
-    private float startingAimVertical = 0.25f;
+    [SerializeField, Range(0f, 1f)] private float startingAimVertical = 0.25f;
 
     [Tooltip("Small visual camera pitch range while aiming.")]
-    [SerializeField]
-    private float minimumAimCameraPitch = 10f;
+    [SerializeField] private float minimumAimCameraPitch = 10f;
+    [SerializeField] private float maximumAimCameraPitch = 24f;
 
-    [SerializeField]
-    private float maximumAimCameraPitch = 24f;
-
-    [SerializeField, Range(0.01f, 0.5f)]
-    private float cameraModeBlendTime = 0.15f;
+    [SerializeField, Range(0.01f, 0.5f)] private float cameraModeBlendTime = 0.15f;
 
     [Header("Normal Orbit")]
-    [SerializeField]
-    private float startingPitch = 18f;
-
-    [SerializeField]
-    private float minimumNormalPitch = 5f;
-
-    [SerializeField]
-    private float maximumNormalPitch = 45f;
+    [SerializeField] private float startingPitch = 18f;
+    [SerializeField] private float minimumNormalPitch = 5f;
+    [SerializeField] private float maximumNormalPitch = 45f;
 
     [Header("Touch Sensitivity")]
-    [SerializeField, Min(1f)]
-    private float yawDegreesPerScreen = 180f;
+    [SerializeField, Min(1f)] private float yawDegreesPerScreen = 180f;
+    [SerializeField, Min(1f)] private float normalPitchDegreesPerScreen = 80f;
 
-    [SerializeField, Min(1f)]
-    private float normalPitchDegreesPerScreen = 80f;
+    [Tooltip("How much one full-screen vertical swipe changes aiming.")]
+    [SerializeField, Min(0.1f)] private float aimVerticalPerScreen = 1.1f;
 
-    [Tooltip("How much one full-screen vertical swipe changes aiming, from 0 to 1.")]
-    [SerializeField, Min(0.1f)]
-    private float aimVerticalPerScreen = 1.1f;
-
-    [SerializeField]
-    private bool invertVertical;
+    [SerializeField] private bool invertVertical;
 
     [Header("Orbit Smoothing")]
-    [SerializeField, Range(0.01f, 0.3f)]
-    private float orbitSmoothTime = 0.07f;
+    [SerializeField, Range(0.01f, 0.3f)] private float orbitSmoothTime = 0.07f;
+
+    [Header("Goal Camera Shake")]
+    [SerializeField, Min(0.01f)] private float goalShakeDuration = 0.3f;
+
+    [Tooltip("Camera-local positional shake.")]
+    [SerializeField] private Vector3 goalPositionShake = new Vector3(0.08f, 0.06f, 0.03f);
+
+    [Tooltip("Rotational shake in degrees.")]
+    [SerializeField] private Vector3 goalRotationShake = new Vector3(0.9f, 1.1f, 0.4f);
+
+    [SerializeField, Min(1f)] private float shakeFrequency = 25f;
+
+    [SerializeField]
+    private AnimationCurve shakeEnvelope = new AnimationCurve(
+        new Keyframe(0f, 1f),
+        new Keyframe(0.25f, 0.85f),
+        new Keyframe(1f, 0f)
+    );
 
     public float Yaw => currentYaw;
     public float Pitch => currentPitch;
-
     public float AimVertical01 { get; private set; }
+    public bool IsAimMode => isAimMode;
+    public bool IsShaking => shakeTimeRemaining > 0f;
 
     private Transform cachedTransform;
 
     private bool isAimMode;
 
     private float normalTargetPitch;
-
     private float targetYaw;
     private float targetPitch;
-
     private float currentYaw;
     private float currentPitch;
 
@@ -108,20 +94,22 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     private float inverseScreenWidth;
     private float inverseScreenHeight;
 
+    private float shakeTimeRemaining;
+    private float shakeTotalDuration;
+
+    private Vector3 shakePositionStrength;
+    private Vector3 shakeRotationStrength;
+    private Vector3 shakeNoiseSeed;
+
     private void Awake()
     {
         cachedTransform = transform;
 
-        targetYaw = target != null
-            ? target.eulerAngles.y
-            : cachedTransform.eulerAngles.y;
-
+        targetYaw = target != null ? target.eulerAngles.y : cachedTransform.eulerAngles.y;
         normalTargetPitch = startingPitch;
         targetPitch = startingPitch;
-
         currentYaw = targetYaw;
         currentPitch = targetPitch;
-
         AimVertical01 = startingAimVertical;
 
         RefreshScreenMetrics();
@@ -149,6 +137,7 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         UpdateCameraModeBlend(deltaTime);
         UpdateOrbitAngles(deltaTime);
         UpdateCameraTransform();
+        ApplyCameraShake(Time.unscaledDeltaTime);
     }
 
     private void UpdateCameraModeBlend(float deltaTime)
@@ -188,76 +177,82 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
     private void UpdateCameraTransform()
     {
-        Quaternion orbitRotation = Quaternion.Euler(
-            currentPitch,
-            currentYaw,
-            0f
-        );
+        Quaternion orbitRotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
+        Quaternion yawRotation = Quaternion.Euler(0f, currentYaw, 0f);
 
-        Quaternion yawRotation = Quaternion.Euler(
-            0f,
-            currentYaw,
-            0f
-        );
+        float distance = Mathf.Lerp(normalDistance, aimDistance, aimBlend);
+        Vector3 positionOffset = Vector3.Lerp(normalPositionOffset, aimPositionOffset, aimBlend);
 
-        float distance = Mathf.Lerp(
-            normalDistance,
-            aimDistance,
-            aimBlend
-        );
-
-        Vector3 positionOffset = Vector3.Lerp(
-            normalPositionOffset,
-            aimPositionOffset,
-            aimBlend
-        );
-
-        Vector3 desiredPosition =
+        cachedTransform.position =
             target.position +
             orbitRotation * Vector3.back * distance +
             yawRotation * positionOffset;
 
-        // Exact follow position prevents lag and wobble while running.
-        cachedTransform.position = desiredPosition;
+        Vector3 normalLookPosition = target.position + yawRotation * normalLookOffset;
 
-        Vector3 normalLookPosition =
-            target.position +
-            yawRotation * normalLookOffset;
+        Vector3 aimLookPosition = aimLookTarget != null
+            ? aimLookTarget.position
+            : target.position + yawRotation * aimFallbackLookOffset;
 
-        Vector3 aimLookPosition =
-            aimLookTarget != null
-                ? aimLookTarget.position
-                : target.position +
-                  yawRotation * aimFallbackLookOffset;
-
-        Vector3 lookPosition = Vector3.Lerp(
-            normalLookPosition,
-            aimLookPosition,
-            aimBlend
-        );
-
-        Vector3 lookDirection =
-            lookPosition - cachedTransform.position;
+        Vector3 lookPosition = Vector3.Lerp(normalLookPosition, aimLookPosition, aimBlend);
+        Vector3 lookDirection = lookPosition - cachedTransform.position;
 
         if (lookDirection.sqrMagnitude <= 0.0001f)
         {
             return;
         }
 
-        Vector3 rotationOffset = Vector3.Lerp(
-            normalRotationOffset,
-            aimRotationOffset,
-            aimBlend
+        Vector3 rotationOffset = Vector3.Lerp(normalRotationOffset, aimRotationOffset, aimBlend);
+        Quaternion lookRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
+
+        cachedTransform.rotation = lookRotation * Quaternion.Euler(rotationOffset);
+    }
+
+    private void ApplyCameraShake(float unscaledDeltaTime)
+    {
+        if (shakeTimeRemaining <= 0f || shakeTotalDuration <= 0f)
+        {
+            return;
+        }
+
+        float elapsedTime = shakeTotalDuration - shakeTimeRemaining;
+        float normalizedTime = Mathf.Clamp01(elapsedTime / shakeTotalDuration);
+
+        float strength = shakeEnvelope != null
+            ? shakeEnvelope.Evaluate(normalizedTime)
+            : 1f - normalizedTime;
+
+        float noiseTime = Time.unscaledTime * shakeFrequency;
+
+        Vector3 positionNoise = new Vector3(
+            SignedPerlin(shakeNoiseSeed.x, noiseTime),
+            SignedPerlin(shakeNoiseSeed.y, noiseTime),
+            SignedPerlin(shakeNoiseSeed.z, noiseTime)
         );
 
-        Quaternion lookRotation = Quaternion.LookRotation(
-            lookDirection,
-            Vector3.up
+        Vector3 rotationNoise = new Vector3(
+            SignedPerlin(shakeNoiseSeed.x + 31.7f, noiseTime),
+            SignedPerlin(shakeNoiseSeed.y + 63.4f, noiseTime),
+            SignedPerlin(shakeNoiseSeed.z + 95.1f, noiseTime)
         );
 
-        cachedTransform.rotation =
-            lookRotation *
-            Quaternion.Euler(rotationOffset);
+        Vector3 localPositionOffset = Vector3.Scale(positionNoise, shakePositionStrength) * strength;
+        Vector3 rotationOffset = Vector3.Scale(rotationNoise, shakeRotationStrength) * strength;
+
+        cachedTransform.position += cachedTransform.rotation * localPositionOffset;
+        cachedTransform.rotation *= Quaternion.Euler(rotationOffset);
+
+        shakeTimeRemaining -= unscaledDeltaTime;
+
+        if (shakeTimeRemaining <= 0f)
+        {
+            StopCameraShake();
+        }
+    }
+
+    private static float SignedPerlin(float seed, float time)
+    {
+        return Mathf.PerlinNoise(seed, time) * 2f - 1f;
     }
 
     private void ReadLookInput()
@@ -276,13 +271,9 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
             return;
         }
 
-        targetYaw +=
-            dragDelta.x *
-            inverseScreenWidth *
-            yawDegreesPerScreen;
+        targetYaw += dragDelta.x * inverseScreenWidth * yawDegreesPerScreen;
 
-        float verticalMultiplier =
-            invertVertical ? -1f : 1f;
+        float verticalMultiplier = invertVertical ? -1f : 1f;
 
         if (isAimMode)
         {
@@ -292,11 +283,8 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
                 aimVerticalPerScreen *
                 verticalMultiplier;
 
-            AimVertical01 = Mathf.Clamp01(
-                AimVertical01
-            );
+            AimVertical01 = Mathf.Clamp01(AimVertical01);
 
-            // Camera moves only a little vertically.
             targetPitch = Mathf.Lerp(
                 minimumAimCameraPitch,
                 maximumAimCameraPitch,
@@ -365,6 +353,46 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         yawSmoothVelocity = 0f;
     }
 
+    public void PlayGoalShake()
+    {
+        PlayCameraShake(goalShakeDuration, goalPositionShake, goalRotationShake);
+    }
+
+    public void PlayCameraShake(
+        float duration,
+        Vector3 positionStrength,
+        Vector3 rotationStrength)
+    {
+        shakeTotalDuration = Mathf.Max(0.01f, duration);
+        shakeTimeRemaining = shakeTotalDuration;
+
+        shakePositionStrength = new Vector3(
+            Mathf.Abs(positionStrength.x),
+            Mathf.Abs(positionStrength.y),
+            Mathf.Abs(positionStrength.z)
+        );
+
+        shakeRotationStrength = new Vector3(
+            Mathf.Abs(rotationStrength.x),
+            Mathf.Abs(rotationStrength.y),
+            Mathf.Abs(rotationStrength.z)
+        );
+
+        shakeNoiseSeed = new Vector3(
+            Random.Range(0f, 100f),
+            Random.Range(100f, 200f),
+            Random.Range(200f, 300f)
+        );
+    }
+
+    public void StopCameraShake()
+    {
+        shakeTimeRemaining = 0f;
+        shakeTotalDuration = 0f;
+        shakePositionStrength = Vector3.zero;
+        shakeRotationStrength = Vector3.zero;
+    }
+
     public void SnapToTarget()
     {
         if (target == null)
@@ -386,8 +414,7 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
     private void CheckScreenSize()
     {
-        if (Screen.width != cachedScreenWidth ||
-            Screen.height != cachedScreenHeight)
+        if (Screen.width != cachedScreenWidth || Screen.height != cachedScreenHeight)
         {
             RefreshScreenMetrics();
         }
@@ -400,5 +427,22 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
         inverseScreenWidth = 1f / cachedScreenWidth;
         inverseScreenHeight = 1f / cachedScreenHeight;
+    }
+
+    private void OnDisable()
+    {
+        StopCameraShake();
+    }
+
+    private void OnValidate()
+    {
+        normalDistance = Mathf.Max(0.1f, normalDistance);
+        aimDistance = Mathf.Max(0.1f, aimDistance);
+
+        maximumNormalPitch = Mathf.Max(minimumNormalPitch, maximumNormalPitch);
+        maximumAimCameraPitch = Mathf.Max(minimumAimCameraPitch, maximumAimCameraPitch);
+
+        goalShakeDuration = Mathf.Max(0.01f, goalShakeDuration);
+        shakeFrequency = Mathf.Max(1f, shakeFrequency);
     }
 }
