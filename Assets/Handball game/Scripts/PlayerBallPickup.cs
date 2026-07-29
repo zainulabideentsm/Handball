@@ -22,7 +22,6 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
     private BallController pendingBall;
     private SphereCollider pickupCollider;
-    private Joystick fixedJoystickComponent;
 
     private void Awake()
     {
@@ -31,8 +30,7 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
         if (fixedJoystick != null)
         {
-            fixedJoystickComponent =
-                fixedJoystick.GetComponent<Joystick>();
+            fixedJoystick.SetActive(true);
         }
 
         SetAimVisuals(false);
@@ -45,8 +43,7 @@ public sealed class PlayerBallPickup : MonoBehaviour
             return;
         }
 
-        BallController ball =
-            other.GetComponentInParent<BallController>();
+        BallController ball = other.GetComponentInParent<BallController>();
 
         if (ball == null || !ball.TryBeginPickup())
         {
@@ -55,8 +52,6 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
         pendingBall = ball;
 
-        // Must happen before movement is disabled so the script can
-        // correctly choose PickUp or RunningPickup.
         if (animationController != null)
         {
             animationController.PlayPickup();
@@ -67,26 +62,27 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
     private void BeginPickupSequence()
     {
+        // Stop only during the pickup animation.
         if (playerMovement != null)
         {
+            playerMovement.SetAimMovementMode(false);
             playerMovement.SetMovementEnabled(false);
         }
 
+        // Joystick remains visible.
         if (fixedJoystick != null)
         {
-            fixedJoystickComponent?.ResetJoystick();
-            fixedJoystick.SetActive(false);
+            fixedJoystick.SetActive(true);
         }
 
         SetAimVisuals(false);
-
         pickupCollider.enabled = false;
     }
 
-    // Called by an Animation Event.
+    // Called by AE_AttachBall on the pickup animation.
     public void AttachPendingBall()
     {
-        if (pendingBall == null)
+        if (pendingBall == null || ballHoldPoint == null)
         {
             return;
         }
@@ -99,6 +95,18 @@ public sealed class PlayerBallPickup : MonoBehaviour
         HeldBall = pendingBall;
         pendingBall = null;
 
+        // Enter slow aim movement before re-enabling movement.
+        if (playerMovement != null)
+        {
+            playerMovement.SetAimMovementMode(true);
+            playerMovement.SetMovementEnabled(true, false);
+        }
+
+        if (fixedJoystick != null)
+        {
+            fixedJoystick.SetActive(true);
+        }
+
         SetAimVisuals(true);
     }
 
@@ -108,18 +116,20 @@ public sealed class PlayerBallPickup : MonoBehaviour
         pendingBall = null;
 
         pickupCollider.enabled = true;
-
         SetAimVisuals(false);
 
         if (fixedJoystick != null)
         {
             fixedJoystick.SetActive(true);
-            fixedJoystickComponent?.ResetJoystick();
         }
 
         if (playerMovement != null)
         {
-            playerMovement.SetMovementEnabled(true);
+            playerMovement.SetAimMovementMode(false);
+
+            // Return to normal movement, but require the joystick
+            // to be released before running again.
+            playerMovement.SetMovementEnabled(true, true);
         }
     }
 
@@ -133,6 +143,16 @@ public sealed class PlayerBallPickup : MonoBehaviour
         if (trajectoryPreview != null)
         {
             trajectoryPreview.SetActive(visible);
+        }
+    }
+
+    private void OnDisable()
+    {
+        pendingBall = null;
+
+        if (playerMovement != null)
+        {
+            playerMovement.SetAimMovementMode(false);
         }
     }
 }

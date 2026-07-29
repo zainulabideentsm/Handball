@@ -6,6 +6,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     [Header("References")]
     [SerializeField] private Animator animator;
     [SerializeField] private PlayerMovementController playerMovement;
+    [SerializeField] private PlayerBallPickup ballPickup;
     [SerializeField] private ParticleSystem runningDustParticle;
 
     [Header("Locomotion Thresholds")]
@@ -29,6 +30,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
 
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
     private static readonly int GroundedHash = Animator.StringToHash("Grounded");
+    private static readonly int HasBallHash = Animator.StringToHash("HasBall");
     private static readonly int WalkPlaybackHash = Animator.StringToHash("WalkPlayback");
     private static readonly int RunPlaybackHash = Animator.StringToHash("RunPlayback");
     private static readonly int JumpHash = Animator.StringToHash("Jump");
@@ -55,12 +57,22 @@ public sealed class PlayerAnimationController : MonoBehaviour
             playerMovement = GetComponent<PlayerMovementController>();
         }
 
+        if (ballPickup == null)
+        {
+            ballPickup = GetComponent<PlayerBallPickup>();
+        }
+
         if (runningDustParticle == null)
         {
             runningDustParticle = GetComponentInChildren<ParticleSystem>();
         }
 
         StopDustImmediately();
+
+        if (animator != null)
+        {
+            animator.SetBool(HasBallHash, false);
+        }
     }
 
     private void OnEnable()
@@ -85,6 +97,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
     {
         UpdateLocomotion();
         UpdateJumpState();
+        UpdateBallState();
         UpdateRunningDust();
     }
 
@@ -111,6 +124,16 @@ public sealed class PlayerAnimationController : MonoBehaviour
         }
 
         animator.SetBool(GroundedHash, playerMovement.IsGrounded);
+    }
+
+    private void UpdateBallState()
+    {
+        if (animator == null || ballPickup == null)
+        {
+            return;
+        }
+
+        animator.SetBool(HasBallHash, ballPickup.HasBall);
     }
 
     private void HandleJumped()
@@ -234,7 +257,7 @@ public sealed class PlayerAnimationController : MonoBehaviour
             return;
         }
 
-        ResetActionTriggers();
+        animator.ResetTrigger(ThrowHash);
         animator.SetTrigger(ThrowHash);
     }
 

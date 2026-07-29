@@ -6,13 +6,63 @@ All notable changes to the Handball project are documented in this file.
 Pending changes in the working tree, not yet committed.
 
 ### Added
-- Unity MCP tooling integration for AI-assisted editor workflows (`.mcp.json`, `Packages/manifest.json` scoped registry for `com.ivanmurzak.unity.mcp`, `Assets/Plugins/NuGet`).
-- `.claude/` project configuration for Claude Code.
+- New animation assets: `Animator Back up.controller`, `UpperBodyMask.mask` (upper-body animation layer support).
+- New art/model assets: `Low Poly Red Hoop.fbx`, `dance_pole.fbx`, `3d models/ice-gun/`, `3d models/red-hoop/`, additional UI arrow PNGs.
 
 ### Changed
-- `Assets/Handball game/Scenes/SampleScene.unity` — scene updates (216 lines changed).
-- `ProjectSettings/PackageManagerSettings.asset`, `ProjectSettings/ProjectSettings.asset` — updated to reflect the new package/registry.
-- `Packages/packages-lock.json` — lockfile refreshed for the new MCP package dependency.
+- `PlayerMovementController.cs`, `PlayerAnimationController.cs`, `PlayerBallPickup.cs` — further tuning.
+- `Animator.controller`, `Materials/AimTrajectory.mat`, `Assets/Handball game/Scenes/SampleScene.unity` — updated.
+
+### Removed
+- `CameraShake.cs` — camera shake responsibility folded into `ThirdPersonCameraFollow.cs`.
+- Unused URP `Settings/` profile assets and the `SkySeries Freebie/` HDRI sky pack (no longer referenced by the scene).
+
+---
+
+## [999a81c] Jump and Goal feedback
+### Added
+- `GoalCelebrationController.cs` — goal UI pop/fade animation, confetti playback, and triggers a camera shake on score.
+- Jump support in `PlayerMovementController.cs` (renamed from `PlayerController.cs`): coyote time, jump buffering, jump cooldown, air control multiplier.
+- `Hoop.prefab`, hit/confetti VFX (`Particle/Hit 5.prefab`, `Particle/CFXM2_Expression_Stun.prefab`), and new UI icons (jump, throw, ball, crosshair).
+- `Jump.fbx` / `Breathing Idle.fbx` animations; character rig reorganized under `3d Character/Player/AnimAndController/` and `Player/NewPlayer/`.
+
+### Changed
+- `PlayerAnimationController.cs`, `ThirdPersonCameraFollow.cs` — reworked to support jump animation state and goal-scored camera shake.
+- `HoopGoalDetector.cs` — scoring flow extended.
+- `Assets/Handball game/Scenes/SampleScene.unity` — large rebuild for the new hoop/jump/celebration setup.
+
+---
+
+## [eaab089] animation perfected, added score system and goal system
+### Added
+- `ScoreManager.cs` — score tracking with TMP score display.
+- `HoopGoalDetector.cs` — dual-trigger goal detection per hoop (arm → confirm → ball reset flow).
+- `GoalTriggerRelay.cs` — relays a hoop's entry/score BoxCollider triggers to its `HoopGoalDetector`.
+
+### Changed
+- `PlayerAimController.cs`, `ThirdPersonCameraFollow.cs`, `TrajectoryPreviewController.cs`, `BallController.cs` — reworked to support the scoring/goal flow.
+- `Assets/Handball game/Scenes/SampleScene.unity` — large rebuild wiring up hoops, triggers, and score UI (3,182 lines changed).
+
+---
+
+## [0bd4af5] working on movement, added walk, fixed camera
+### Added
+- `PlayerAnimationEventRelay.cs` — relays animation-clip events (`AE_AttachBall`, `AE_ReleaseBall`) to ball pickup/throw.
+- `Walking.fbx`, `Start to walk.fbx` animations.
+
+### Changed
+- `PlayerController.cs`, `BallController.cs`, `PlayerBallPickup.cs`, `PlayerThrowController.cs`, `ThirdPersonCameraFollow.cs`, `PlayerAnimationController.cs` — added walk movement state and camera fixes.
+- `Animator.controller` reworked for the new walk state.
+- URP settings tuning (`Mobile_RPAsset.asset`, `UniversalRenderPipelineGlobalSettings.asset`, `ProjectSettings/GraphicsSettings.asset`).
+
+---
+
+## [17d282b] Claude added, Fixed Trajectory, Throw, Added Trajectory preview
+### Added
+- `.claude/` Unity MCP skills for AI-assisted editor workflows (asset, GameObject, scene, profiler, and script tools).
+
+### Changed
+- Fixed and extended the throw trajectory preview mechanic.
 
 ---
 
