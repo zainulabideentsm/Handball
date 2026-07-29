@@ -3,7 +3,7 @@
 All notable changes to the Handball project are documented in this file.
 
 ## [In Progress] Aim trajectory & camera framing rework
-Scoped, in-flight work. Sound effects, camera bob/shake polish, and other demo features are intentionally paused for this pass — only the aim trajectory visuals and aim camera framing are being touched. **Status: four passes in so far — (1) initial chevron-mesh + camera rework, (2) a world/local mesh-space position bug found and fixed, (3) a visual-match correction that turned out to have its own bugs (red material, spike shape), (4) a chevron mesh-topology fix + camera composition rewrite — see "Correction pass 3" below for the latest. Round-4 manual re-verification by the user is still pending; do not consider this task complete until that's confirmed.**
+Scoped, in-flight work. Sound effects, camera bob/shake polish, and other demo features are intentionally paused for this pass — only the aim trajectory visuals and aim camera framing are being touched. **Status: three passes in so far — (1) initial chevron-mesh + camera rework, (2) a world/local mesh-space position bug found and fixed, (3) a visual-match correction (red material fixed, chevron shape rebuilt flat, camera pulled back further) — see "Correction pass 2" below for the latest. Round-3 manual re-verification by the user is still pending; do not consider this task complete until that's confirmed.**
 
 ### Root cause (why the old trajectory looked dark and combed)
 - `AimTrajectory.mat` was a **Lit** surface (`receiveShadows = true`), so it visibly darkened wherever it faced away from the directional light or fell in shadow.
@@ -184,130 +184,10 @@ These are the requested starting values, applied and confirmed via component rea
 
 ---
 
-### Correction pass 3 — chevron mesh-merging bug + camera composition rewrite
-Round-3 manual testing found the pass-2 visual correction still didn't match the football reference: a large solid white polygon/connected strip appeared among the chevrons, and the aim camera still felt centred on the player instead of looking into the play area. This pass fixes both root causes properly rather than re-tuning values.
-
-**New backup folder** (previous backups left untouched): `.backup/2026-07-29-trajectory-camera-pass3/` — `TrajectoryPreviewController.cs.bak`, `ThirdPersonCameraFollow.cs.bak`, `SampleScene.unity.bak`, `CHANGELOG.md.bak`.
-
-#### Problem 1 root cause — aim camera looked at the player, not into the play area
-Passes 1-2 only ever retuned `aimPositionOffset`/`aimDistance`/pitch values feeding the *same* formula as normal mode: an orbit position (`target.position + orbitRotation * Vector3.back * distance`) plus a look point blended toward `aimLookTarget`/`aimFallbackLookOffset`. Because both the position and the look point were still anchored close to `target.position`, the camera kept rotating to face back toward the player as yaw/pitch changed, instead of holding a fixed shoulder-relative position and looking forward down-range.
-
-**Fix** (`ThirdPersonCameraFollow.cs`) — aim mode now computes position and rotation from two independent points instead of one shared orbit+lookAt pair:
-```csharp
-// Position: a fixed shoulder offset + height, pulled back by aimDistance — never orbits toward the player.
-Vector3 ComputeAimPosition(Quaternion yawRotation) =>
-    target.position +
-    yawRotation * Vector3.right * aimShoulderOffset +
-    Vector3.up * aimCameraHeight -
-    yawRotation * Vector3.forward * aimDistance;
-
-// Rotation: looks at a point several metres AHEAD, tilted by pitch — never at the player.
-Quaternion ComputeAimRotation(Vector3 cameraPosition, Quaternion yawRotation)
-{
-    Quaternion pitchRotation = Quaternion.Euler(currentPitch, 0f, 0f);
-    Vector3 pitchedForward = yawRotation * pitchRotation * Vector3.forward;
-    Vector3 lookPoint = target.position + pitchedForward * aimLookAheadDistance
-        + yawRotation * Vector3.right * aimLookRightOffset + Vector3.up * aimLookHeight;
-    return Quaternion.LookRotation(lookPoint - cameraPosition, Vector3.up) * Quaternion.Euler(aimRotationOffset);
-}
-```
-Normal mode's own position/rotation formula is untouched (still the original orbit+lookAt). `UpdateCameraTransform()` now computes both modes fully, then blends: position via `Vector3.Lerp(normalPosition, aimPosition, aimBlend)`, rotation via `Quaternion.Slerp(normalRotation, aimRotation, aimBlend)` — using the same `aimBlend` (`SmoothDamp` over `cameraModeBlendTime`) as before, so the smooth transition, orbit smoothing, yaw/pitch system, touch input, and goal-shake application (applied after, on top of the final transform, unchanged) all keep working exactly as before.
-
-**New fields added** to `ThirdPersonCameraFollow.cs` (`aimDistance` and `cameraModeBlendTime` already existed and are reused, not duplicated): `aimShoulderOffset`, `aimCameraHeight`, `aimLookAheadDistance`, `aimLookHeight`, `aimLookRightOffset`.
-
-**Deprecated, not deleted**: `aimPositionOffset` and `aimFallbackLookOffset` are no longer read by the new formula (the old single position-offset/look-offset model doesn't map onto the new two-point composition), so they're now `[HideInInspector]` + `[Obsolete]` — declared and their values preserved, matching the "never rename/delete a serialized field" rule, exactly like `tilesPerWorldUnit` in the trajectory script. `aimLookTarget` (a scene reference, not a tuned value) is left wired but is no longer read by aim-mode rotation — the explicit look-ahead formula supersedes it. `aimRotationOffset` is still actively applied (post-multiplied onto the new aim rotation), so it isn't dead.
-
-#### Problem 2 root cause — chevron mesh was one connected mesh, not independent quads
-The pass-2 chevron was a hand-built double-stroke bracket (8 vertices/4 triangles per chevron), and — more importantly — its triangle *index* buffer was built once in `Awake` for the full `ChevronCapacity`, and every frame `Mesh.SetVertices` was called with the **entire** preallocated array regardless of how many chevrons were actually meant to be visible. Inactive slots were "collapsed" to a single point rather than excluded, and the mesh's submitted vertex/index *count* never shrank to match the active count. Between the collapse-point behaviour and the double-stroke geometry, this was fragile — the earlier reports of "sideways spikes" and now a "connected white polygon" both trace back to this same one active mesh being asked to represent a variable number of active chevrons without the index/vertex counts actually being trimmed to match.
-
-**Fix** (`TrajectoryPreviewController.cs`, `AnimateChevrons()`) — rewritten to the exact independent-quad topology:
-- Every chevron is now a single flat quad: **4 vertices, 4 UVs, 6 triangle indices**, with `vertexBase = i * 4` / `triangleBase = i * 6`, exactly `(0,1,2,0,2,3)` per quad — no vertex is ever shared or connected between chevrons.
-- Vertex/UV/triangle arrays are preallocated **once** at the hard cap (`ChevronCapacity = 20`) and reused every frame — never reallocated.
-- Only the **active range** is submitted to the mesh each frame: `chevronMesh.Clear(false)` (explicitly requested, to guarantee no previous frame's larger chevron count leaves anything behind) followed by `SetVertices(chevronVertices, 0, activeCount * 4)`, `SetUVs(0, chevronUVs, 0, activeCount * 4)`, and `SetIndices(chevronTriangles, 0, activeCount * 6, MeshTopology.Triangles, 0, true)` — i.e. exactly `activeChevronCount * 6` indices, never the full preallocated buffer. There is no more "collapse inactive chevrons to a point" step at all — chevrons beyond the active count are simply never written or submitted.
-- Because indices are only ever submitted up to `activeCount * 4 - 1`, and vertices are truncated to the same count by the same `SetVertices` call, there is no way for one chevron's geometry to be interpreted as reaching into the next chevron's slot.
-
-#### Chevron visual — texture-based double-chevron replaces procedural stroke geometry
-Per the requested "preferred final implementation," the flat double-chevron shape is now a **texture** on a plain quad instead of hand-built stroke geometry:
-- **New asset**: `Assets/Handball game/Materials/AimChevronTexture.png` (128×128, RGBA32) — generated procedurally (`Texture2D` + per-pixel distance-to-segment shading + `EncodeToPNG`, no external image tool available) as a clean white double-chevron/">" bracket on a fully transparent background, with a small antialiased edge. Import settings: `alphaIsTransparency = true`, uncompressed, no mipmaps, bilinear, clamp.
-- **`AimChevron.mat` rebuilt and re-verified**: `_BaseMap` = the new texture, `_BaseColor`/`_Color` = pure opaque white `RGBA(1,1,1,1)` (per-instance opacity is applied separately via a runtime `MaterialPropertyBlock`, not baked into the material), `Surface` = Transparent, `Blend` = Alpha, `Cull` = Off, `ZWrite` = Off, `renderQueue` = 3000 (Transparent). **Verified by reloading the material from disk after saving** and reading every property back — this directly addresses the pass-2 material color drift (`_BaseColor` had silently become red) by never trusting an unverified write again.
-- **Chevron orientation** (Problem 2's "CHEVRON ORIENTATION" section) is unchanged in approach from pass 2 and still correct: one shared camera-facing plane per frame (`cameraForward` = the single plane normal for every chevron), with each chevron's `screenTangent = Vector3.ProjectOnPlane(worldTangent, cameraForward)` giving its in-plane rotation. `chevronRotationOffsetDegrees` (default `0`) remains available to correct the texture's authored forward axis if ever needed — not used to mask tangent-logic bugs.
-- **Chevron sizing** now follows the requested screen-space-derived model: `worldHeight = 2 * distanceFromCamera * tan(fieldOfView/2) * chevronScreenHeight`, clamped to `[minimumWorldSize, maximumWorldSize]` — this keeps chevrons a roughly constant apparent screen size from near to far, instead of pass-2's flat-then-perspective-compensated size. Spacing is derived from size: `spacing = referenceWorldHeight * spacingMultiplier`, calculated once per rebuild from the trajectory's start point (kept singular, not recalculated per-chevron, so the flow-animation phase stays stable — see Known Limitations).
-- Coordinate space is unchanged from the pass-1 fix and still correct: every corner is computed in world space, then converted via `transform.InverseTransformPoint(...)` immediately before being written into the vertex buffer. The simulation still starts at `throwOrigin.position`, never `transform.position`.
-- End-of-trajectory chevrons are **not** scaled down (per "use opacity fading only, do not use strong end-scale reduction") — this pass removed the old end-scale-fade behavior entirely rather than risk it looking like the previous size distortion. True **per-chevron opacity** fade near the end was **not implemented** — see Known Limitations for why.
-
-#### `TrajectoryPreviewController.cs` — Inspector field changes (pass 2 → pass 3)
-`chevronSize`/`chevronSpacing` (pass-2 fields, one pass old, no real tuning history) are removed, replaced by the screen-space-derived sizing model's fields. `startSkipDistance`/`endSkipDistance`/`chevronOpacity`/`flowSpeed`/`maximumVisibleChevrons`/`chevronRotationOffsetDegrees` field *names* are unchanged from pass 2 — only their default/actual values changed, per the explicit requirement that the previous incorrect values (`startSkipDistance≈0`, `endSkipDistance≈2.59`, spacing≈`1.41`) must not remain.
-
-| Field | Before (pass 2, as found in-scene) | After (pass 3) |
-|---|---|---|
-| `chevronSize` | `0.30` | *(removed — superseded)* |
-| `chevronSpacing` | `0.42` | *(removed — superseded)* |
-| `chevronScreenHeight` | *(new)* | **`0.028`** |
-| `minimumWorldSize` | *(new)* | **`0.10`** |
-| `maximumWorldSize` | *(new)* | **`0.22`** |
-| `spacingMultiplier` | *(new)* | **`1.4`** |
-| `maximumVisibleChevrons` | `24` | **`20`** |
-| `startSkipDistance` | `0.55` | **`0.7`** |
-| `endSkipDistance` | `0.10` | **`0.2`** |
-| `chevronOpacity` | `0.85` | **`0.85`** (unchanged) |
-| `flowSpeed` | `1` | **`0.8`** |
-| `chevronRotationOffsetDegrees` | `0` | **`0`** (unchanged) |
-
-`launchSpeed` remains `20` (the user's own change since pass 1) — still untouched.
-
-#### `ThirdPersonCameraFollow` on `Main Camera` — Inspector values (pass 2/hand-tuned → pass 3)
-"Before" reflects what was actually in the scene at the start of this pass, including values the user had hand-tuned since pass 2 (`maximumAimCameraPitch` had drifted to `38`).
-
-| Field | Before | After |
-|---|---|---|
-| `aimDistance` | `3.4` | **`3.4`** (unchanged — already matched the new target) |
-| `aimShoulderOffset` | *(new)* | **`0.9`** |
-| `aimCameraHeight` | *(new)* | **`1.35`** |
-| `aimLookAheadDistance` | *(new)* | **`6.5`** |
-| `aimLookHeight` | *(new)* | **`1.15`** |
-| `aimLookRightOffset` | *(new)* | **`0.45`** |
-| `cameraModeBlendTime` | `0.25` | **`0.25`** (unchanged) |
-| `minimumNormalPitch` | `-8` | **`-10`** |
-| `maximumNormalPitch` | `48` | **`48`** (unchanged) |
-| `minimumAimCameraPitch` | `-10` | **`-10`** (unchanged) |
-| `maximumAimCameraPitch` | `38` (hand-tuned by user since pass 2) | **`28`** |
-| `aimPositionOffset` | `(0.65, 0.45, 0)` | *(deprecated, hidden — value preserved, no longer read)* |
-| `aimFallbackLookOffset` | `(0, 1.0, 5.0)` | *(deprecated, hidden — value preserved, no longer read)* |
-
-#### Hierarchy / component changes
-None beyond the material/texture asset changes above — `TrajectoryPreview`'s `MeshFilter`/`MeshRenderer` and `Main Camera`'s `ThirdPersonCameraFollow` component are the same components from earlier passes, just with new/changed serialized values and (for the trajectory script) new code.
-
-#### Performance approach (unchanged principle, re-verified this pass)
-No per-frame `Instantiate`/`Destroy`/`new Material`. Vertex/UV/triangle arrays are allocated exactly once (`Awake`) at the `ChevronCapacity` hard cap and reused every frame; only a leading sub-range is ever written to or submitted. `Mesh.Clear(false)` + partial `SetVertices`/`SetUVs`/`SetIndices` calls are the only per-frame mesh API calls. The expensive ballistic simulation + `Physics.SphereCast` walk still only reruns when aim direction/origin/speed change beyond a small threshold (unchanged from pass 1).
-
-#### Testing (this pass)
-**Automated verification performed:** both scripts compile cleanly (`assets-refresh` + `console-get-logs`, no errors) after each edit; the generated chevron texture's alpha channel was read back pixel-by-pixel (`Texture2D.GetPixels32`) and rendered as an ASCII map to confirm it actually forms a chevron bracket shape, not a solid block; `AimChevron.mat` reloaded from disk after saving and every relevant property (`_BaseMap`, `_BaseColor`, `Surface`, `Cull`, `ZWrite`, `renderQueue`, shader) read back and confirmed; all Inspector values on both components confirmed via component read-back after being set.
-
-**Not performed — Play Mode is not accessible to me in this session** (the Unity MCP tools for entering Play Mode and reading the Game View are not exposed here, same limitation as passes 1-2). I have not seen this render. Do not take anything above as visual confirmation.
-
-**Manual Play Mode re-verification — round 4 — required before this task can be marked complete.** Full 31-item acceptance checklist as given, notably:
-1-9 (chevrons): white, flat, camera-facing, no spikes, no sideways tilt, consistent size, no merging into a white block, no tiny needles.
-10-14 (trajectory): starts beside/above the throwing hand, follows the moving player, rotates with yaw, updates with pitch, matches the thrown ball.
-15-18 (camera): player in the lower-left third, camera looks ahead into the play area (not at the player), target/trajectory visible near centre.
-19-23 (camera behavior): normal camera's extra vertical range, aim camera's upward look without going top-down, smooth transitions both ways, no drift.
-24-31 (regression): goal shake, pickup, slow aim movement, throw animation, `AE_ReleaseBall`, normal movement after throw, scoring, clean console.
-
-**This task remains incomplete until the user manually verifies round 4 in Play Mode and approves.**
-
-#### Rollback (this pass only)
-1. **Trajectory script**: copy `.backup/2026-07-29-trajectory-camera-pass3/TrajectoryPreviewController.cs.bak` back over `Assets/Handball game/Scripts/TrajectoryPreviewController.cs` (restores pass-2's double-stroke chevron, not the pass-1 kite or the original `LineRenderer`).
-2. **Camera script**: copy `.backup/2026-07-29-trajectory-camera-pass3/ThirdPersonCameraFollow.cs.bak` back over `Assets/Handball game/Scripts/ThirdPersonCameraFollow.cs` (restores the single orbit+lookAt aim formula).
-3. **Scene**: restore `.backup/2026-07-29-trajectory-camera-pass3/SampleScene.unity.bak` if the Inspector value changes need reverting wholesale, or manually set the "Before" values from the tables above.
-4. **Texture/material**: delete `Assets/Handball game/Materials/AimChevronTexture.png` and clear `AimChevron.mat`'s `_BaseMap` if the textured approach needs reverting to pass-2's procedural geometry (only meaningful together with rollback step 1).
-5. Reload the scene (or restart the Editor) after any script rollback to force recompilation.
-
----
-
 ### Known limitations
 - The trajectory prediction mask (`Ground|Boundaries|Hoop`) intentionally does **not** include the stray `Cube`/`Cube (1)` leftover objects or the inactive `Basketball Hoop` model in the scene — consistent with the old mask's narrower behavior, but means the preview won't show a bounce off those if they're ever re-enabled/reused.
-- **Per-chevron end-of-trajectory opacity fade was not implemented.** The requested "last 2-3 chevrons fade by opacity only" needs per-vertex or per-chevron alpha, but the stock `Universal Render Pipeline/Unlit` shader does not sample mesh vertex colors, and this component renders the whole trajectory as one draw call/one `MaterialPropertyBlock`, so alpha can currently only be set uniformly for the entire trajectory (`chevronOpacity`). Implementing true per-chevron fade would need a small custom shader (to read vertex color) — deliberately not attempted this pass to avoid introducing another new failure mode; flagging for a future pass if wanted.
-- Chevron **spacing** is computed once per rebuild from the trajectory start point's on-screen size (for animation-phase stability), while chevron **size** is computed individually per chevron from its own distance to the camera — so size correctly stays near-constant on screen end-to-end, but spacing is a single representative value rather than continuously perspective-correct along the whole arc. This was a deliberate simplification to avoid the added complexity/risk of a variable-spacing marching algorithm; likely imperceptible in practice but noted here.
-- Camera composition values (`aimShoulderOffset`, `aimCameraHeight`, `aimLookAheadDistance`, `aimLookHeight`, `aimLookRightOffset`) are the requested starting values, applied and read-back-confirmed but **not yet visually tuned in Play Mode**.
+- Camera framing values (`aimPositionOffset`, `aimDistance`) are a first pass based on the component's own tooltip semantics, not yet visually confirmed — may need further tuning after manual Play Mode review.
+- `endFadeChevronCount`/`endFadeMinScale`/`targetChevronCount`/spacing values are reasonable defaults but not yet tuned against the actual in-game hoop distances; may want adjustment once seen in motion.
 
 ### Rollback instructions
 1. **Script**: copy `.backup/2026-07-29-trajectory-camera/TrajectoryPreviewController.cs.bak` back over `Assets/Handball game/Scripts/TrajectoryPreviewController.cs`.

@@ -5,10 +5,8 @@ using UnityEngine;
 [DefaultExecutionOrder(50)]
 public sealed class TrajectoryPreviewController : MonoBehaviour
 {
-    // Hard cap on simultaneously visible chevrons (mobile performance / buffer size).
-    private const int ChevronCapacity = 20;
-    private const int VerticesPerChevron = 4;
-    private const int IndicesPerChevron = 6;
+    // Fixed mesh buffer capacity (upper bound for targetChevronCount / maxChevronCount).
+    private const int ChevronCapacity = 32;
 
     private const float RebuildOriginThresholdSqr = 0.0009f; // ~3cm
     private const float RebuildDirectionDotThreshold = 0.99995f; // ~0.57 degrees
@@ -44,48 +42,47 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
     [SerializeField, Min(0f)]
     private float collisionSkin = 0.01f;
 
-    [Header("Chevron Material")]
-    [SerializeField] private Material chevronMaterial;
-
-    [Header("Chevron Size (screen-space derived)")]
-    [Tooltip("Desired chevron height as a fraction of screen height (perspective camera).")]
-    [SerializeField, Min(0.001f)]
-    private float chevronScreenHeight = 0.028f;
+    [Header("Chevron Shape")]
+    [SerializeField]
+    private Material chevronMaterial;
 
     [SerializeField, Min(0.01f)]
-    private float minimumWorldSize = 0.10f;
+    private float chevronForwardLength = 0.34f;
 
     [SerializeField, Min(0.01f)]
-    private float maximumWorldSize = 0.22f;
+    private float chevronWidth = 0.26f;
 
-    [Tooltip("Chevron world-space spacing = worldHeight * spacingMultiplier.")]
-    [SerializeField, Min(0.1f)]
-    private float spacingMultiplier = 1.4f;
+    [SerializeField, Range(8, ChevronCapacity)]
+    private int targetChevronCount = 22;
 
-    [SerializeField, Range(1, ChevronCapacity)]
-    private int maximumVisibleChevrons = 20;
+    [SerializeField, Min(0.05f)]
+    private float minChevronSpacing = 0.35f;
 
-    [Tooltip("World-space gap left empty at the start so chevrons don't intersect the player, camera or held ball.")]
+    [SerializeField, Min(0.05f)]
+    private float maxChevronSpacing = 0.9f;
+
+    [Tooltip("World-space gap left empty at the start so chevrons don't intersect the player or held ball.")]
     [SerializeField, Min(0f)]
-    private float startSkipDistance = 0.7f;
+    private float startSkipDistance = 0.4f;
 
-    [Tooltip("World-space gap trimmed off the end, near the predicted landing point.")]
-    [SerializeField, Min(0f)]
-    private float endSkipDistance = 0.2f;
+    [Tooltip("Number of trailing chevrons (near the predicted landing point) that shrink smoothly.")]
+    [SerializeField, Range(0, 6)]
+    private int endFadeChevronCount = 3;
 
     [SerializeField, Range(0f, 1f)]
-    private float chevronOpacity = 0.85f;
+    private float endFadeMinScale = 0.15f;
 
-    [Tooltip("Chevron flow speed toward the target, in world units per second.")]
+    [Header("Chevron Animation")]
+    [Tooltip("Flow the chevrons toward the target over time.")]
     [SerializeField]
-    private float flowSpeed = 0.8f;
+    private bool animateTexture = true;
 
-    [Tooltip("Roll correction (degrees) around camera.forward — only for correcting a texture's authored forward axis, not for masking bad tangent logic.")]
+    [Tooltip("Chevron flow speed in world units per second.")]
     [SerializeField]
-    private float chevronRotationOffsetDegrees = 0f;
+    private float scrollSpeed = 1.5f;
 
     [Header("Rendering")]
-    [Tooltip("Camera used to orient/size chevrons. Falls back to Camera.main when empty.")]
+    [Tooltip("Camera used to billboard the chevrons. Falls back to Camera.main when empty.")]
     [SerializeField]
     private Camera aimCamera;
 
@@ -99,7 +96,6 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
     private Mesh chevronMesh;
-    private MaterialPropertyBlock propertyBlock;
 
     private Vector3[] fineSamplePositions;
     private float[] fineCumulativeDistance;
@@ -107,10 +103,7 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
     private float totalLength;
     private bool hasValidPath;
 
-    // Preallocated once; only a leading sub-range is ever submitted to the mesh each frame.
     private Vector3[] chevronVertices;
-    private Vector2[] chevronUVs;
-    private int[] chevronTriangles;
 
     private bool hasCachedSimulation;
     private Vector3 lastOrigin;
@@ -142,56 +135,44 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
         fineSamplePositions = new Vector3[maximumPointCount];
         fineCumulativeDistance = new float[maximumPointCount];
 
-        chevronVertices = new Vector3[ChevronCapacity * VerticesPerChevron];
-        chevronUVs = new Vector2[ChevronCapacity * VerticesPerChevron];
-        chevronTriangles = new int[ChevronCapacity * IndicesPerChevron];
+        chevronVertices = new Vector3[ChevronCapacity * 4];
 
-        BuildStaticBuffers();
-
-        propertyBlock = new MaterialPropertyBlock();
-        ApplyOpacity();
+        BuildStaticMeshBuffers();
 
         cachedCamera = aimCamera != null ? aimCamera : Camera.main;
     }
 
-    // UV pattern and triangle indices never change frame to frame — every chevron is an
-    // independent 4-vertex quad (0,1,2 / 0,2,3), never sharing or connecting to its neighbours.
-    private void BuildStaticBuffers()
+    private void BuildStaticMeshBuffers()
     {
+        var triangles = new int[ChevronCapacity * 6];
+        var uvs = new Vector2[ChevronCapacity * 4];
+
         for (int i = 0; i < ChevronCapacity; i++)
         {
-            int vertexBase = i * VerticesPerChevron;
-            int triangleBase = i * IndicesPerChevron;
+            int vertexBase = i * 4;
+            int triangleBase = i * 6;
 
-            chevronUVs[vertexBase + 0] = new Vector2(0f, 0f);
-            chevronUVs[vertexBase + 1] = new Vector2(1f, 0f);
-            chevronUVs[vertexBase + 2] = new Vector2(1f, 1f);
-            chevronUVs[vertexBase + 3] = new Vector2(0f, 1f);
+            triangles[triangleBase + 0] = vertexBase + 0;
+            triangles[triangleBase + 1] = vertexBase + 1;
+            triangles[triangleBase + 2] = vertexBase + 2;
 
-            chevronTriangles[triangleBase + 0] = vertexBase + 0;
-            chevronTriangles[triangleBase + 1] = vertexBase + 1;
-            chevronTriangles[triangleBase + 2] = vertexBase + 2;
+            triangles[triangleBase + 3] = vertexBase + 0;
+            triangles[triangleBase + 4] = vertexBase + 2;
+            triangles[triangleBase + 5] = vertexBase + 3;
 
-            chevronTriangles[triangleBase + 3] = vertexBase + 0;
-            chevronTriangles[triangleBase + 4] = vertexBase + 2;
-            chevronTriangles[triangleBase + 5] = vertexBase + 3;
-        }
-    }
-
-    private void ApplyOpacity()
-    {
-        if (meshRenderer == null || propertyBlock == null)
-        {
-            return;
+            uvs[vertexBase + 0] = new Vector2(0.5f, 1f);
+            uvs[vertexBase + 1] = new Vector2(1f, 0f);
+            uvs[vertexBase + 2] = new Vector2(0.5f, 0.35f);
+            uvs[vertexBase + 3] = new Vector2(0f, 0f);
         }
 
-        meshRenderer.GetPropertyBlock(propertyBlock);
-        propertyBlock.SetColor("_BaseColor", new Color(1f, 1f, 1f, chevronOpacity));
-        meshRenderer.SetPropertyBlock(propertyBlock);
+        chevronMesh.SetVertices(chevronVertices);
+        chevronMesh.SetUVs(0, uvs);
+        chevronMesh.SetTriangles(triangles, 0);
     }
 
     // Runs after ThirdPersonCameraFollow.LateUpdate (default order 0) via [DefaultExecutionOrder(50)],
-    // so chevron orientation/sizing uses this frame's final camera transform with no lag.
+    // so billboarding uses this frame's final camera transform with no lag.
     private void LateUpdate()
     {
         bool shouldShow =
@@ -243,8 +224,6 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
         SimulateTrajectory(origin, direction, speed);
     }
 
-    // Ballistic prediction always starts at throwOrigin.position — never this GameObject's
-    // transform.position, which may sit anywhere in the scene and must not affect the path.
     private void SimulateTrajectory(Vector3 startPosition, Vector3 direction, float speed)
     {
         Vector3 initialVelocity = direction * speed;
@@ -342,34 +321,9 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
             : transform.forward;
     }
 
-    // Approximate world-space size that keeps a roughly constant on-screen height for a
-    // perspective camera, clamped so nothing near the player becomes huge or near the
-    // target shrinks to a needle.
-    private float ComputeWorldHeight(Camera camera, float distanceFromCamera)
-    {
-        float worldHeight =
-            2f *
-            distanceFromCamera *
-            Mathf.Tan(camera.fieldOfView * 0.5f * Mathf.Deg2Rad) *
-            chevronScreenHeight;
-
-        return Mathf.Clamp(worldHeight, minimumWorldSize, maximumWorldSize);
-    }
-
     private void AnimateChevrons()
     {
-        if (cachedCamera == null)
-        {
-            cachedCamera = aimCamera != null ? aimCamera : Camera.main;
-        }
-
-        if (cachedCamera == null)
-        {
-            HideTrajectory();
-            return;
-        }
-
-        float usableLength = totalLength - startSkipDistance - endSkipDistance;
+        float usableLength = Mathf.Max(0f, totalLength - startSkipDistance);
 
         if (usableLength <= 0.001f)
         {
@@ -377,101 +331,124 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
             return;
         }
 
-        Transform cameraTransform = cachedCamera.transform;
-        Vector3 cameraPosition = cameraTransform.position;
-        Vector3 cameraForward = cameraTransform.forward;
-        Vector3 cameraUp = cameraTransform.up;
+        float desiredSpacing = usableLength / Mathf.Max(1, targetChevronCount);
+        float spacing = Mathf.Clamp(desiredSpacing, minChevronSpacing, maxChevronSpacing);
 
-        Quaternion rollCorrection = Mathf.Abs(chevronRotationOffsetDegrees) > 0.0001f
-            ? Quaternion.AngleAxis(chevronRotationOffsetDegrees, cameraForward)
-            : Quaternion.identity;
+        int visibleCount = Mathf.Clamp(
+            Mathf.FloorToInt(usableLength / spacing),
+            0,
+            ChevronCapacity
+        );
 
-        // A single reference spacing (from the start point's on-screen size) keeps the flow
-        // animation's phase stable; each chevron's own SIZE below still varies with its own
-        // distance from the camera, which is what actually fixes near/far sizing.
-        float referenceDistance = Mathf.Max(0.01f, Vector3.Distance(fineSamplePositions[0], cameraPosition));
-        float referenceWorldHeight = ComputeWorldHeight(cachedCamera, referenceDistance);
-        float spacing = Mathf.Max(0.02f, referenceWorldHeight * spacingMultiplier);
-
-        float phase = flowSpeed > 0f
-            ? Mathf.Repeat(Time.time * flowSpeed, spacing)
-            : 0f;
-
-        int cappedMax = Mathf.Min(maximumVisibleChevrons, ChevronCapacity);
-        float endBoundary = totalLength - endSkipDistance;
-
-        int cursor = 0;
-        int activeCount = 0;
-
-        for (int i = 0; i < cappedMax; i++)
-        {
-            float distance = startSkipDistance + i * spacing + phase;
-
-            if (distance > endBoundary)
-            {
-                break;
-            }
-
-            SampleAtDistance(distance, ref cursor, out Vector3 position, out Vector3 tangent);
-
-            // Project the world tangent onto the camera's viewing plane — the chevron rotates
-            // only inside that shared plane, never using the raw 3D tangent directly.
-            Vector3 screenTangent = Vector3.ProjectOnPlane(tangent, cameraForward);
-
-            if (screenTangent.sqrMagnitude < 0.0001f)
-            {
-                screenTangent = Vector3.ProjectOnPlane(cameraUp, cameraForward);
-
-                if (screenTangent.sqrMagnitude < 0.0001f)
-                {
-                    screenTangent = cameraUp;
-                }
-            }
-
-            screenTangent.Normalize();
-
-            Vector3 planeUp = rollCorrection * screenTangent;
-            Vector3 planeRight = Vector3.Cross(cameraForward, planeUp).normalized;
-
-            float distanceFromCamera = Vector3.Distance(position, cameraPosition);
-            float worldHeight = ComputeWorldHeight(cachedCamera, distanceFromCamera);
-            float half = worldHeight * 0.5f;
-
-            int vertexBase = activeCount * VerticesPerChevron;
-
-            chevronVertices[vertexBase + 0] = ToLocalMeshSpace(position - planeRight * half - planeUp * half);
-            chevronVertices[vertexBase + 1] = ToLocalMeshSpace(position + planeRight * half - planeUp * half);
-            chevronVertices[vertexBase + 2] = ToLocalMeshSpace(position + planeRight * half + planeUp * half);
-            chevronVertices[vertexBase + 3] = ToLocalMeshSpace(position - planeRight * half + planeUp * half);
-
-            activeCount++;
-        }
-
-        if (activeCount <= 0)
+        if (visibleCount <= 0)
         {
             HideTrajectory();
             return;
         }
 
-        int activeVertexCount = activeCount * VerticesPerChevron;
-        int activeIndexCount = activeCount * IndicesPerChevron;
+        if (cachedCamera == null)
+        {
+            cachedCamera = aimCamera != null ? aimCamera : Camera.main;
+        }
 
-        // Fully reset before rebuilding so no previous frame's higher chevron count can leave
-        // stale vertices/indices behind; the underlying arrays are still reused, not reallocated.
-        chevronMesh.Clear(false);
-        chevronMesh.SetVertices(chevronVertices, 0, activeVertexCount);
-        chevronMesh.SetUVs(0, chevronUVs, 0, activeVertexCount);
-        chevronMesh.SetIndices(chevronTriangles, 0, activeIndexCount, MeshTopology.Triangles, 0, true);
+        Vector3 cameraPosition = cachedCamera != null
+            ? cachedCamera.transform.position
+            : fineSamplePositions[0] - transform.forward * 5f;
+
+        float phase = animateTexture
+            ? Mathf.Repeat(Time.time * scrollSpeed, spacing)
+            : 0f;
+
+        float fadeRange = endFadeChevronCount > 0 ? spacing * endFadeChevronCount : 0f;
+
+        int cursor = 0;
+
+        for (int i = 0; i < ChevronCapacity; i++)
+        {
+            int vertexBase = i * 4;
+
+            if (i >= visibleCount)
+            {
+                CollapseChevron(vertexBase);
+                continue;
+            }
+
+            float distance = startSkipDistance + i * spacing + phase;
+
+            if (distance > totalLength)
+            {
+                CollapseChevron(vertexBase);
+                continue;
+            }
+
+            SampleAtDistance(distance, ref cursor, out Vector3 position, out Vector3 tangent);
+
+            Vector3 viewDirection = position - cameraPosition;
+
+            viewDirection = viewDirection.sqrMagnitude > 0.0001f
+                ? viewDirection.normalized
+                : Vector3.forward;
+
+            Vector3 forwardAxis = Vector3.ProjectOnPlane(tangent, viewDirection);
+
+            if (forwardAxis.sqrMagnitude < 0.0001f)
+            {
+                forwardAxis = Vector3.ProjectOnPlane(Vector3.up, viewDirection);
+
+                if (forwardAxis.sqrMagnitude < 0.0001f)
+                {
+                    forwardAxis = Vector3.up;
+                }
+            }
+
+            forwardAxis.Normalize();
+
+            Vector3 rightAxis = Vector3.Cross(forwardAxis, viewDirection).normalized;
+
+            float scale = 1f;
+
+            if (fadeRange > 0f)
+            {
+                float distanceFromEnd = totalLength - distance;
+
+                if (distanceFromEnd < fadeRange)
+                {
+                    float fadeT = Mathf.Clamp01(distanceFromEnd / fadeRange);
+                    scale = Mathf.Lerp(endFadeMinScale, 1f, fadeT);
+                }
+            }
+
+            float halfLength = chevronForwardLength * 0.5f * scale;
+            float halfWidth = chevronWidth * 0.5f * scale;
+
+            // Kite/chevron shape: forward tip, indented back notch, wide back corners.
+            // All four corners are computed in WORLD space (from the world-space sampled
+            // trajectory), then converted to the TrajectoryPreview transform's local space
+            // right before being stored — Mesh vertices are always local, unlike the old
+            // LineRenderer which had useWorldSpace=true. Skipping this conversion double-applies
+            // the GameObject's transform and offsets the whole trajectory by its position.
+            chevronVertices[vertexBase + 0] = transform.InverseTransformPoint(position + forwardAxis * halfLength);
+            chevronVertices[vertexBase + 1] = transform.InverseTransformPoint(position - forwardAxis * halfLength + rightAxis * halfWidth);
+            chevronVertices[vertexBase + 2] = transform.InverseTransformPoint(position - forwardAxis * (halfLength * 0.35f));
+            chevronVertices[vertexBase + 3] = transform.InverseTransformPoint(position - forwardAxis * halfLength - rightAxis * halfWidth);
+        }
+
+        chevronMesh.SetVertices(chevronVertices);
         chevronMesh.RecalculateBounds();
 
         meshRenderer.enabled = true;
     }
 
-    // Mesh vertices are always local to this transform — never store raw world positions here,
-    // or the whole trajectory offsets by however far this GameObject sits from the world origin.
-    private Vector3 ToLocalMeshSpace(Vector3 worldPoint)
+    private void CollapseChevron(int vertexBase)
     {
-        return transform.InverseTransformPoint(worldPoint);
+        // fineSamplePositions[0] is world space (throwOrigin.position at simulation time);
+        // convert to local space like every other vertex, so RecalculateBounds() stays correct.
+        Vector3 collapsePoint = transform.InverseTransformPoint(fineSamplePositions[0]);
+
+        chevronVertices[vertexBase + 0] = collapsePoint;
+        chevronVertices[vertexBase + 1] = collapsePoint;
+        chevronVertices[vertexBase + 2] = collapsePoint;
+        chevronVertices[vertexBase + 3] = collapsePoint;
     }
 
     private void HideTrajectory()
@@ -479,11 +456,6 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
         if (meshRenderer != null && meshRenderer.enabled)
         {
             meshRenderer.enabled = false;
-        }
-
-        if (chevronMesh != null && chevronMesh.vertexCount > 0)
-        {
-            chevronMesh.Clear(false);
         }
     }
 
@@ -498,8 +470,8 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
     private void OnValidate()
     {
         maximumPointCount = Mathf.Max(10, maximumPointCount);
-        maximumVisibleChevrons = Mathf.Clamp(maximumVisibleChevrons, 1, ChevronCapacity);
-        maximumWorldSize = Mathf.Max(minimumWorldSize, maximumWorldSize);
+        targetChevronCount = Mathf.Clamp(targetChevronCount, 8, ChevronCapacity);
+        maxChevronSpacing = Mathf.Max(minChevronSpacing, maxChevronSpacing);
 
         // Deprecated field kept only for Inspector value compatibility; clamp so it's not flagged as unused.
 #pragma warning disable CS0618
@@ -511,8 +483,6 @@ public sealed class TrajectoryPreviewController : MonoBehaviour
             fineSamplePositions = new Vector3[maximumPointCount];
             fineCumulativeDistance = new float[maximumPointCount];
             hasCachedSimulation = false;
-
-            ApplyOpacity();
         }
     }
 }

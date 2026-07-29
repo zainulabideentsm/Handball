@@ -404,17 +404,17 @@ MonoBehaviour:
   previewBallRadius: 0.12
   collisionSkin: 0.01
   chevronMaterial: {fileID: 2100000, guid: c45bb365210ca4644924dce774197793, type: 2}
-  chevronScreenHeight: 0.028
-  minimumWorldSize: 0.1
-  maximumWorldSize: 0.22
-  spacingMultiplier: 20
-  maximumVisibleChevrons: 20
-  startSkipDistance: 0.7
-  endSkipDistance: 0.2
-  chevronOpacity: 0.85
-  flowSpeed: 0.8
-  chevronRotationOffsetDegrees: 0
-  aimCamera: {fileID: 330585545}
+  chevronForwardLength: 0.34
+  chevronWidth: 0.26
+  targetChevronCount: 22
+  minChevronSpacing: 0.35
+  maxChevronSpacing: 0.9
+  startSkipDistance: 0.4
+  endFadeChevronCount: 3
+  endFadeMinScale: 0.15
+  animateTexture: 1
+  scrollSpeed: 1
+  aimCamera: {fileID: 0}
   tilesPerWorldUnit: 2
 --- !u!23 &127182008
 MeshRenderer:
@@ -951,24 +951,21 @@ MonoBehaviour:
   normalPositionOffset: {x: 0, y: 0.61, z: 0}
   normalLookOffset: {x: 0, y: 0.72, z: 0}
   normalRotationOffset: {x: 0, y: 0, z: 0}
-  aimDistance: 3.4
-  aimShoulderOffset: 0.9
-  aimCameraHeight: 1.35
-  aimLookAheadDistance: 6.5
-  aimLookHeight: 1.15
-  aimLookRightOffset: 0.45
+  aimDistance: 2.15
+  aimPositionOffset: {x: 0.85, y: 0.55, z: 0}
+  aimFallbackLookOffset: {x: 0, y: 1.15, z: 4}
   aimRotationOffset: {x: 0, y: 0, z: 0}
   startingAimVertical: 0.25
-  minimumAimCameraPitch: -10
-  maximumAimCameraPitch: 28
-  cameraModeBlendTime: 0.25
+  minimumAimCameraPitch: 10
+  maximumAimCameraPitch: 38
+  cameraModeBlendTime: 0.15
   startingPitch: 18
-  minimumNormalPitch: -8
-  maximumNormalPitch: 48
+  minimumNormalPitch: 5
+  maximumNormalPitch: 45
   yawDegreesPerScreen: 180
   normalPitchDegreesPerScreen: 80
   aimVerticalPerScreen: 1.1
-  invertVertical: 1
+  invertVertical: 0
   orbitSmoothTime: 0.07
   goalShakeDuration: 0.3
   goalPositionShake: {x: 0.08, y: 0.06, z: 0.03}
@@ -1007,8 +1004,6 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  aimPositionOffset: {x: 0.65, y: 0.45, z: 0}
-  aimFallbackLookOffset: {x: 0, y: 1, z: 5}
 --- !u!1 &383270798
 GameObject:
   m_ObjectHideFlags: 0

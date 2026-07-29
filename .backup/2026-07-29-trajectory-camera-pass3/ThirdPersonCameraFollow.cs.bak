@@ -15,27 +15,12 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     [SerializeField] private Vector3 normalRotationOffset = Vector3.zero;
 
     [Header("Aim Camera")]
-    [SerializeField, Min(0.1f)] private float aimDistance = 4f;
+    [SerializeField, Min(0.1f)] private float aimDistance = 3.4f;
 
-    // Shoulder-offset position + separate forward look-ahead point, so the aim camera sits
-    // behind/beside the player and looks INTO the play area instead of rotating to stare
-    // at the player's own centre (see UpdateCameraTransform/ComputeAimPosition/ComputeAimRotation).
-    [Header("Aim Camera Composition")]
-    [Tooltip("Sideways offset (camera-relative right) of the aim camera position from the player.")]
-    [SerializeField] private float aimShoulderOffset = 0.9f;
+    [Tooltip("Positive X moves the camera right, placing the player left on-screen.")]
+    [SerializeField] private Vector3 aimPositionOffset = new Vector3(1.1f, -0.2f, 0f);
 
-    [Tooltip("Height of the aim camera position above the player's feet/pivot.")]
-    [SerializeField] private float aimCameraHeight = 1.35f;
-
-    [Tooltip("How far ahead (along aim yaw/pitch) the aim camera looks — never at the player.")]
-    [SerializeField] private float aimLookAheadDistance = 6.5f;
-
-    [Tooltip("Height of the forward aim look point above the player's feet/pivot.")]
-    [SerializeField] private float aimLookHeight = 1.15f;
-
-    [Tooltip("Sideways offset (camera-relative right) of the forward aim look point.")]
-    [SerializeField] private float aimLookRightOffset = 0.45f;
-
+    [SerializeField] private Vector3 aimFallbackLookOffset = new Vector3(0f, 1.15f, 4f);
     [SerializeField] private Vector3 aimRotationOffset = Vector3.zero;
 
     [SerializeField, Range(0f, 1f)] private float startingAimVertical = 0.25f;
@@ -80,17 +65,6 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         new Keyframe(0.25f, 0.85f),
         new Keyframe(1f, 0f)
     );
-
-    [Header("Deprecated")]
-    [HideInInspector]
-    [SerializeField]
-    [System.Obsolete("Superseded by the shoulder-offset/look-ahead Aim Camera Composition fields. Kept only so old Inspector values are not lost.")]
-    private Vector3 aimPositionOffset = new Vector3(1.1f, -0.2f, 0f);
-
-    [HideInInspector]
-    [SerializeField]
-    [System.Obsolete("Superseded by the shoulder-offset/look-ahead Aim Camera Composition fields. Kept only so old Inspector values are not lost.")]
-    private Vector3 aimFallbackLookOffset = new Vector3(0f, 1.15f, 4f);
 
     public float Yaw => currentYaw;
     public float Pitch => currentPitch;
@@ -201,75 +175,37 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         );
     }
 
-    // Normal and aim modes now use structurally different position/rotation formulas (normal
-    // still orbits the player; aim uses a shoulder offset + forward look point), so they're
-    // each computed fully, then blended via aimBlend — position by Lerp, rotation by Slerp.
     private void UpdateCameraTransform()
     {
+        Quaternion orbitRotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
         Quaternion yawRotation = Quaternion.Euler(0f, currentYaw, 0f);
 
-        Vector3 normalPosition = ComputeNormalPosition(yawRotation);
-        Quaternion normalRotation = ComputeNormalRotation(normalPosition, yawRotation);
+        float distance = Mathf.Lerp(normalDistance, aimDistance, aimBlend);
+        Vector3 positionOffset = Vector3.Lerp(normalPositionOffset, aimPositionOffset, aimBlend);
 
-        Vector3 aimPosition = ComputeAimPosition(yawRotation);
-        Quaternion aimRotation = ComputeAimRotation(aimPosition, yawRotation);
-
-        cachedTransform.position = Vector3.Lerp(normalPosition, aimPosition, aimBlend);
-        cachedTransform.rotation = Quaternion.Slerp(normalRotation, aimRotation, aimBlend);
-    }
-
-    private Vector3 ComputeNormalPosition(Quaternion yawRotation)
-    {
-        Quaternion orbitRotation = Quaternion.Euler(currentPitch, currentYaw, 0f);
-
-        return target.position +
-               orbitRotation * Vector3.back * normalDistance +
-               yawRotation * normalPositionOffset;
-    }
-
-    private Quaternion ComputeNormalRotation(Vector3 cameraPosition, Quaternion yawRotation)
-    {
-        Vector3 lookPosition = target.position + yawRotation * normalLookOffset;
-        Vector3 lookDirection = lookPosition - cameraPosition;
-
-        Quaternion lookRotation = lookDirection.sqrMagnitude > 0.0001f
-            ? Quaternion.LookRotation(lookDirection, Vector3.up)
-            : cachedTransform.rotation;
-
-        return lookRotation * Quaternion.Euler(normalRotationOffset);
-    }
-
-    // Shoulder-offset aim camera position — behind and to the side of the player, at a fixed
-    // height, rather than orbiting directly behind (which is what made it "look at" the player).
-    private Vector3 ComputeAimPosition(Quaternion yawRotation)
-    {
-        return target.position +
-               yawRotation * Vector3.right * aimShoulderOffset +
-               Vector3.up * aimCameraHeight -
-               yawRotation * Vector3.forward * aimDistance;
-    }
-
-    // Separate forward look point several metres into the play area. Vertical aim pitch tilts
-    // this look point up/down (via pitchedForward) without pulling the camera back toward the
-    // player, so the trajectory can arc higher than the camera's own pitch while staying visible.
-    private Quaternion ComputeAimRotation(Vector3 cameraPosition, Quaternion yawRotation)
-    {
-        Quaternion pitchRotation = Quaternion.Euler(currentPitch, 0f, 0f);
-        Vector3 pitchedForward = yawRotation * pitchRotation * Vector3.forward;
-
-        Vector3 lookPoint =
+        cachedTransform.position =
             target.position +
-            pitchedForward * aimLookAheadDistance +
-            yawRotation * Vector3.right * aimLookRightOffset +
-            Vector3.up * aimLookHeight;
+            orbitRotation * Vector3.back * distance +
+            yawRotation * positionOffset;
 
-        Vector3 lookDirection = lookPoint - cameraPosition;
+        Vector3 normalLookPosition = target.position + yawRotation * normalLookOffset;
 
-        Quaternion lookRotation = lookDirection.sqrMagnitude > 0.0001f
-            ? Quaternion.LookRotation(lookDirection, Vector3.up)
-            : Quaternion.LookRotation(yawRotation * Vector3.forward, Vector3.up);
+        Vector3 aimLookPosition = aimLookTarget != null
+            ? aimLookTarget.position
+            : target.position + yawRotation * aimFallbackLookOffset;
 
-        return lookRotation * Quaternion.Euler(aimRotationOffset);
+        Vector3 lookPosition = Vector3.Lerp(normalLookPosition, aimLookPosition, aimBlend);
+        Vector3 lookDirection = lookPosition - cachedTransform.position;
+
+        if (lookDirection.sqrMagnitude <= 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 rotationOffset = Vector3.Lerp(normalRotationOffset, aimRotationOffset, aimBlend);
+        Quaternion lookRotation = Quaternion.LookRotation(lookDirection, Vector3.up);
+
+        cachedTransform.rotation = lookRotation * Quaternion.Euler(rotationOffset);
     }
 
     private void ApplyCameraShake(float unscaledDeltaTime)
@@ -508,12 +444,5 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
 
         goalShakeDuration = Mathf.Max(0.01f, goalShakeDuration);
         shakeFrequency = Mathf.Max(1f, shakeFrequency);
-
-        // Deprecated fields kept only for Inspector value compatibility; read (discard) them
-        // so they're not flagged as unused by the compiler.
-#pragma warning disable CS0618
-        _ = aimPositionOffset;
-        _ = aimFallbackLookOffset;
-#pragma warning restore CS0618
     }
 }
