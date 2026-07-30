@@ -3,10 +3,13 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public sealed class HoopGoalDetector : MonoBehaviour
 {
-    [Header("References")]
+    [Header("Required References")]
     [SerializeField] private ScoreManager scoreManager;
     [SerializeField] private Transform ballSpawnPoint;
     [SerializeField] private GoalCelebrationController goalCelebration;
+
+    [Tooltip("Assign the AudioSource from this hoop's GoalAudio child.")]
+    [SerializeField] private AudioSource goalAudioSource;
 
     [Tooltip("Assign this hoop's own confetti Particle System.")]
     [SerializeField] private ParticleSystem goalParticles;
@@ -34,6 +37,24 @@ public sealed class HoopGoalDetector : MonoBehaviour
     private bool isArmed;
     private bool resetPending;
 
+    private void Awake()
+    {
+        if (scoreManager == null)
+        {
+            Debug.LogError("HoopGoalDetector: ScoreManager is not assigned.", this);
+        }
+
+        if (ballSpawnPoint == null)
+        {
+            Debug.LogError("HoopGoalDetector: BallSpawnPoint is not assigned.", this);
+        }
+
+        if (goalAudioSource == null)
+        {
+            Debug.LogWarning("HoopGoalDetector: GoalAudio child AudioSource is not assigned.", this);
+        }
+    }
+
     private void Update()
     {
         if (isArmed && Time.time > armedUntil)
@@ -54,7 +75,8 @@ public sealed class HoopGoalDetector : MonoBehaviour
             return;
         }
 
-        if (ball.CurrentState == BallState.Held || ball.CurrentState == BallState.PickupPending)
+        if (ball.CurrentState == BallState.Held ||
+            ball.CurrentState == BallState.PickupPending)
         {
             return;
         }
@@ -97,15 +119,17 @@ public sealed class HoopGoalDetector : MonoBehaviour
         resetPending = true;
         resetAt = Time.time + resetDelay;
 
-        if (scoreManager != null)
+        scoreManager?.AddScore(pointsPerGoal);
+        goalCelebration?.PlayGoalCelebration(goalParticles);
+
+        GameManager gameManager = GameManager.Instance;
+
+        if (gameManager != null && gameManager.SoundData != null && goalAudioSource != null)
         {
-            scoreManager.AddScore(pointsPerGoal);
+            gameManager.SoundData.PlayGoal(goalAudioSource);
         }
 
-        if (goalCelebration != null)
-        {
-            goalCelebration.PlayGoalCelebration(goalParticles);
-        }
+        gameManager?.Feedback?.PlayGoalFeedback();
 
         Debug.Log("GOAL!");
     }

@@ -17,7 +17,6 @@ public sealed class PlayerMovementController : MonoBehaviour
     [SerializeField, Min(0f)] private float rotationSpeed = 720f;
 
     [Header("Aim Movement")]
-    [Tooltip("Maximum movement speed while holding and aiming the ball.")]
     [SerializeField, Min(0f)] private float aimMovementSpeed = 1.5f;
 
     [Tooltip("PlayerAimController controls rotation while this mode is active.")]
@@ -42,6 +41,7 @@ public sealed class PlayerMovementController : MonoBehaviour
     [SerializeField] private float groundedForce = -2f;
 
     public event Action Jumped;
+    public event Action<float> Landed;
 
     public bool IsMoving { get; private set; }
     public bool IsGrounded { get; private set; }
@@ -56,7 +56,8 @@ public sealed class PlayerMovementController : MonoBehaviour
     public float AimMoveX => IsAimMovementMode ? MovementInput.x : 0f;
     public float AimMoveY => IsAimMovementMode ? MovementInput.y : 0f;
 
-    private float ActiveMaximumSpeed => IsAimMovementMode ? aimMovementSpeed : maximumSpeed;
+    private float ActiveMaximumSpeed =>
+        IsAimMovementMode ? aimMovementSpeed : maximumSpeed;
 
     private CharacterController characterController;
 
@@ -64,16 +65,19 @@ public sealed class PlayerMovementController : MonoBehaviour
     private Vector3 planarVelocity;
 
     private float verticalVelocity;
+    private float mostNegativeVerticalVelocity;
     private float lastGroundedTime = float.NegativeInfinity;
     private float lastJumpRequestTime = float.NegativeInfinity;
     private float nextJumpAllowedTime;
 
     private bool movementEnabled = true;
     private bool waitingForJoystickNeutral;
+    private bool wasGroundedLastFrame;
 
     private void Awake()
     {
         characterController = GetComponent<CharacterController>();
+        wasGroundedLastFrame = characterController.isGrounded;
 
         if (cameraTransform == null && Camera.main != null)
         {
@@ -122,9 +126,14 @@ public sealed class PlayerMovementController : MonoBehaviour
         MovementInput = input;
         InputMagnitude = input.magnitude;
 
-        Vector3 desiredDirection = CalculateCameraRelativeDirection(input);
+        Vector3 desiredDirection =
+            CalculateCameraRelativeDirection(input);
 
-        UpdateHorizontalMovement(desiredDirection, InputMagnitude, deltaTime);
+        UpdateHorizontalMovement(
+            desiredDirection,
+            InputMagnitude,
+            deltaTime
+        );
 
         if (!IsAimMovementMode)
         {
@@ -156,7 +165,10 @@ public sealed class PlayerMovementController : MonoBehaviour
 
     private Vector2 ReadJoystickInput()
     {
-        Vector2 input = new Vector2(movementJoystick.Horizontal, movementJoystick.Vertical);
+        Vector2 input = new Vector2(
+            movementJoystick.Horizontal,
+            movementJoystick.Vertical
+        );
 
         if (input.magnitude <= inputDeadZone)
         {
@@ -182,8 +194,11 @@ public sealed class PlayerMovementController : MonoBehaviour
             return Vector2.zero;
         }
 
-        float correctedMagnitude = Mathf.InverseLerp(inputDeadZone, 1f, adjustedMagnitude);
-        float movementMagnitude = Mathf.Lerp(minimumWalkInput, 1f, correctedMagnitude);
+        float correctedMagnitude =
+            Mathf.InverseLerp(inputDeadZone, 1f, adjustedMagnitude);
+
+        float movementMagnitude =
+            Mathf.Lerp(minimumWalkInput, 1f, correctedMagnitude);
 
         return input.normalized * movementMagnitude;
     }
@@ -204,22 +219,37 @@ public sealed class PlayerMovementController : MonoBehaviour
         cameraForward.Normalize();
         cameraRight.Normalize();
 
-        Vector3 direction = cameraForward * input.y + cameraRight * input.x;
+        Vector3 direction =
+            cameraForward * input.y +
+            cameraRight * input.x;
 
-        return direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector3.zero;
+        return direction.sqrMagnitude > 0.0001f
+            ? direction.normalized
+            : Vector3.zero;
     }
 
-    private void UpdateHorizontalMovement(Vector3 desiredDirection, float inputMagnitude, float deltaTime)
+    private void UpdateHorizontalMovement(
+        Vector3 desiredDirection,
+        float inputMagnitude,
+        float deltaTime)
     {
         float targetSpeed = ActiveMaximumSpeed * inputMagnitude;
-        float speedChangeRate = targetSpeed > CurrentSpeed ? acceleration : deceleration;
+
+        float speedChangeRate =
+            targetSpeed > CurrentSpeed
+                ? acceleration
+                : deceleration;
 
         if (!IsGrounded)
         {
             speedChangeRate *= airControlMultiplier;
         }
 
-        CurrentSpeed = Mathf.MoveTowards(CurrentSpeed, targetSpeed, speedChangeRate * deltaTime);
+        CurrentSpeed = Mathf.MoveTowards(
+            CurrentSpeed,
+            targetSpeed,
+            speedChangeRate * deltaTime
+        );
 
         if (desiredDirection.sqrMagnitude > 0.0001f)
         {
@@ -229,8 +259,14 @@ public sealed class PlayerMovementController : MonoBehaviour
             }
             else
             {
-                float directionControl = IsGrounded ? 1f : airControlMultiplier;
-                float maximumRadians = movementDirectionSpeed * directionControl * Mathf.Deg2Rad * deltaTime;
+                float directionControl =
+                    IsGrounded ? 1f : airControlMultiplier;
+
+                float maximumRadians =
+                    movementDirectionSpeed *
+                    directionControl *
+                    Mathf.Deg2Rad *
+                    deltaTime;
 
                 currentMoveDirection = Vector3.RotateTowards(
                     currentMoveDirection,
@@ -264,7 +300,8 @@ public sealed class PlayerMovementController : MonoBehaviour
             return;
         }
 
-        Quaternion targetRotation = Quaternion.LookRotation(currentMoveDirection, Vector3.up);
+        Quaternion targetRotation =
+            Quaternion.LookRotation(currentMoveDirection, Vector3.up);
 
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
@@ -275,7 +312,8 @@ public sealed class PlayerMovementController : MonoBehaviour
 
     public void RequestJump()
     {
-        if (!movementEnabled || IsAimMovementMode && !allowJumpWhileAiming)
+        if (!movementEnabled ||
+            IsAimMovementMode && !allowJumpWhileAiming)
         {
             return;
         }
@@ -285,7 +323,8 @@ public sealed class PlayerMovementController : MonoBehaviour
 
     private void TryPerformJump()
     {
-        if (!movementEnabled || IsAimMovementMode && !allowJumpWhileAiming)
+        if (!movementEnabled ||
+            IsAimMovementMode && !allowJumpWhileAiming)
         {
             return;
         }
@@ -295,21 +334,24 @@ public sealed class PlayerMovementController : MonoBehaviour
             return;
         }
 
-        bool hasBufferedJump = Time.time - lastJumpRequestTime <= jumpBufferTime;
+        bool hasBufferedJump =
+            Time.time - lastJumpRequestTime <= jumpBufferTime;
 
         if (!hasBufferedJump)
         {
             return;
         }
 
-        bool canJump = Time.time - lastGroundedTime <= coyoteTime;
+        bool canJump =
+            Time.time - lastGroundedTime <= coyoteTime;
 
         if (!canJump)
         {
             return;
         }
 
-        verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
+        verticalVelocity =
+            Mathf.Sqrt(jumpHeight * -2f * gravity);
 
         IsGrounded = false;
         lastJumpRequestTime = float.NegativeInfinity;
@@ -332,13 +374,22 @@ public sealed class PlayerMovementController : MonoBehaviour
 
     private void MoveCharacter(float deltaTime)
     {
+        if (verticalVelocity < mostNegativeVerticalVelocity)
+        {
+            mostNegativeVerticalVelocity = verticalVelocity;
+        }
+
         Vector3 finalVelocity = planarVelocity;
         finalVelocity.y = verticalVelocity;
 
-        CollisionFlags collisionFlags = characterController.Move(finalVelocity * deltaTime);
+        CollisionFlags collisionFlags =
+            characterController.Move(finalVelocity * deltaTime);
 
-        bool touchedGround = (collisionFlags & CollisionFlags.Below) != 0;
-        bool touchedCeiling = (collisionFlags & CollisionFlags.Above) != 0;
+        bool touchedGround =
+            (collisionFlags & CollisionFlags.Below) != 0;
+
+        bool touchedCeiling =
+            (collisionFlags & CollisionFlags.Above) != 0;
 
         if (touchedCeiling && verticalVelocity > 0f)
         {
@@ -347,23 +398,37 @@ public sealed class PlayerMovementController : MonoBehaviour
 
         IsGrounded = touchedGround;
 
+        bool landedThisFrame =
+            touchedGround && !wasGroundedLastFrame;
+
         if (touchedGround)
         {
             lastGroundedTime = Time.time;
+
+            if (landedThisFrame &&
+                mostNegativeVerticalVelocity < -0.1f)
+            {
+                Landed?.Invoke(-mostNegativeVerticalVelocity);
+            }
+
+            mostNegativeVerticalVelocity = 0f;
 
             if (verticalVelocity < 0f)
             {
                 verticalVelocity = groundedForce;
             }
         }
+
+        wasGroundedLastFrame = IsGrounded;
     }
 
     private void UpdateMovementData()
     {
         IsMoving = CurrentSpeed > 0.05f;
 
-        // Keep this relative to normal speed so slow aim movement uses Walk, not Run.
-        NormalizedSpeed = maximumSpeed > 0f ? Mathf.Clamp01(CurrentSpeed / maximumSpeed) : 0f;
+        NormalizedSpeed = maximumSpeed > 0f
+            ? Mathf.Clamp01(CurrentSpeed / maximumSpeed)
+            : 0f;
     }
 
     private void StopHorizontalMovement()
@@ -386,9 +451,12 @@ public sealed class PlayerMovementController : MonoBehaviour
         lastJumpRequestTime = float.NegativeInfinity;
     }
 
-    public void SetMovementEnabled(bool enabled, bool requireJoystickNeutral = true)
+    public void SetMovementEnabled(
+        bool enabled,
+        bool requireJoystickNeutral = true)
     {
         movementEnabled = enabled;
+
         StopHorizontalMovement();
         UpdateMovementData();
 
@@ -406,7 +474,12 @@ public sealed class PlayerMovementController : MonoBehaviour
     private void OnValidate()
     {
         maximumSpeed = Mathf.Max(0f, maximumSpeed);
-        aimMovementSpeed = Mathf.Clamp(aimMovementSpeed, 0f, maximumSpeed);
+        aimMovementSpeed = Mathf.Clamp(
+            aimMovementSpeed,
+            0f,
+            maximumSpeed
+        );
+
         gravity = Mathf.Min(gravity, -0.01f);
         groundedForce = Mathf.Min(groundedForce, -0.01f);
         jumpHeight = Mathf.Max(0.1f, jumpHeight);

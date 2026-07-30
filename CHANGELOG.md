@@ -2,6 +2,115 @@
 
 All notable changes to the Handball project are documented in this file.
 
+## [In Progress] Small audio & feedback system
+A minimal, non-invasive audio/feedback pass — one ScriptableObject, two `AudioSource`s, small hooks at real gameplay events. No `SoundId` enum, no `AudioEntry`/`AudioLibrary`, no audio pool, no extra managers, no footstep/soft-hard-impact variation system, as explicitly requested. **Implementation complete; not yet manually verified in Play Mode — the user is testing.**
+
+### New backup folder
+`.backup/2026-07-29-audio-pass1/` (previous trajectory/camera backup folders untouched) — `GameManager.cs.bak`, `PlayerMovementController.cs.bak`, `PlayerBallPickup.cs.bak`, `PlayerThrowController.cs.bak`, `BallController.cs.bak`, `HoopGoalDetector.cs.bak`, `ThirdPersonCameraFollow.cs.bak`, `SampleScene.unity.bak`, `CHANGELOG.md.bak`.
+
+### Existing audio inventory (checked before assigning anything)
+Project-wide search for `.wav`/`.mp3`/`.ogg`/`AudioClip`/`AudioSource`/`AudioMixer` before this pass found: **no `AudioMixer`, no `AudioSource` in the scene, exactly 1 `AudioListener`** (`Main Camera`, standard), and six pre-existing clips in `Assets/Music and SFX/` (none were referenced by any component):
+
+| File | Length | Category | Used as |
+|---|---|---|---|
+| `ball_Hit_ground.mp3` | 1.88s, stereo | **Suitable** | General ball impact/bounce |
+| `Throw whoosh.mp3` | 1.15s, stereo | **Suitable** | Throw/release |
+| `Goal chime.mp3` | 3.08s, stereo | **Suitable** | Goal/win |
+| `Bubble_Pop.mp3` | 0.19s, stereo | **Possibly suitable** | Repurposed as the jump sound (a quick "pop" reads well as a hop; a proper UI click was sourced separately for the button sound instead) |
+| `Victory (Male voince.mp3` (sic) | 2.14s, stereo | **Unclear** | Not used — a male voice cheer would double up with `Goal chime` for the same event; the spec asks for exactly one goal sound, and a chime is more universally reusable than a voice line. Left in the project, untouched. |
+| `Sparkle Tiwinkle.mp3` (sic) | 2.46s, stereo | **Unused** | Doesn't map to any of the 8 required sounds; not assigned. |
+
+None of the six had documented licensing anywhere in the project — their original source/license could not be verified this pass, so they're used as-is but flagged as unclear provenance in `AudioLicenses.md`.
+
+### Downloaded audio (missing sounds only — music, button, pickup, hoop impact)
+Bash has outbound network access in this environment (confirmed via `curl`), so missing clips were sourced rather than invented. Full details, including exact download URLs, in `Assets/Handball game/Audio/AudioLicenses.md`.
+
+| File | Source | License | Attribution required |
+|---|---|---|---|
+| `Audio/Music/gameplay_music.mp3` ("Monkeys Spinning Monkeys" by Kevin MacLeod) | incompetech.com | CC BY 4.0 | **Yes** — see `AudioLicenses.md` for the exact credit line |
+| `Audio/SFX/ui_button_click.ogg` (`click_001.ogg`) | Kenney "Interface Sounds" (kenney.nl) | CC0 1.0 | No |
+| `Audio/SFX/ball_pickup.ogg` (`confirmation_001.ogg`) | Kenney "Interface Sounds" (kenney.nl) | CC0 1.0 | No |
+| `Audio/SFX/hoop_impact.ogg` (`impactBell_heavy_000.ogg`) | Kenney "Impact Sounds" (kenney.nl) | CC0 1.0 | No |
+
+Every download was verified before use: the music file's ID3 metadata was read to confirm it's genuinely 144 BPM (within the requested 130–150 range) before import; each Kenney file's presence in its official CC0 zip was confirmed; nothing was assumed or invented.
+
+**Missing**: none — all 8 required sounds are covered (5 reused-existing, 3 newly downloaded, `Bubble_Pop.mp3` repurposed for jump). The music track is a real song rather than a custom-composed seamless loop — see Known Limitations.
+
+### Scripts created
+- **`Assets/Handball game/Scripts/Audio/HandballSoundData.cs`** — the one ScriptableObject, structured exactly per the provided reference (same field names, same `PlayOneShot`-based methods, same `StartGameplayMusic` guard against duplicate playback).
+
+### Scripts modified
+- **`GameManager.cs`** — added a minimal `static Instance` (none existed before — required for the `GameManager.Instance.PlayX()` pattern used by the hooks below); `soundData`/`musicAudioSource`/`sfxAudioSource` fields + public accessors; `Start()` now calls `StartGameplayMusic()` once; `Restart()` now calls `PlayButtonSound()` first; seven null-safe `PlayXSound()` helpers + `StartGameplayMusic()`, each a one-line `soundData?.PlayX(...)` call — gameplay is unaffected if `soundData`/AudioSources are unassigned.
+- **`PlayerMovementController.cs`** — one line, `GameManager.Instance?.PlayJumpSound();`, added immediately after `Jumped?.Invoke()` inside `TryPerformJump()` — i.e. only on the actual successful-jump code path (coyote time + buffer + cooldown already passed), never on a failed jump-button press.
+- **`PlayerBallPickup.cs`** — one line, `GameManager.Instance?.PlayPickupSound();`, added in `AttachPendingBall()` right after `HeldBall = pendingBall;` — the exact "ball successfully attaches to the hand" moment, called from `AE_AttachBall`. No separate start/complete sound.
+- **`PlayerThrowController.cs`** — added an optional `followCamera` (`ThirdPersonCameraFollow`) reference field; in `ReleasePendingBall()` (the `AE_ReleaseBall` flow), added `GameManager.Instance?.PlayThrowSound();` and `followCamera?.PlayThrowImpulse();` immediately after `pendingThrowBall.Throw(...)` — after the real release, before `ballPickup.CompleteThrow()`. Release timing itself (`Throw()`'s call site) is unchanged.
+- **`BallController.cs`** — added `minimumImpactSpeed` (1.5), `impactSoundCooldown` (0.1s), and `hoopImpactLayerMask` (512 = `Hoop` layer 9) fields; added `TryPlayImpactSound(Collision)`, called only from `OnCollisionEnter` (not `OnCollisionStay`, so resting/rolling contact never re-triggers it) after the existing `EvaluateGroundContact` call. Speed-gated, cooldown-gated, and picks hoop-impact vs general-ball-impact by the colliding object's layer. Existing ground-detection/rolling physics untouched.
+- **`HoopGoalDetector.cs`** — in `ConfirmGoal()` (called exactly once per confirmed goal — already guarded against `OnTriggerStay` repeats by the existing armed/cooldown state machine), added `GameManager.Instance?.PlayGoalSound();` and a `#if UNITY_ANDROID || UNITY_IOS` `Handheld.Vibrate();` block, both after the existing celebration/score calls.
+- **`ThirdPersonCameraFollow.cs`** — added `throwImpulseDuration` (0.12s), `throwImpulsePositionShake` ((0.02, 0.015, 0.01)), `throwImpulseRotationShake` ((0.3, 0.35, 0.15)) fields, and a `PlayThrowImpulse()` public method that calls the existing `PlayCameraShake(...)` with those values — reuses the goal-shake system entirely, no new shake component, much weaker/shorter than `PlayGoalShake()`. Camera composition, aim framing, pitch ranges, and `PlayGoalShake()` itself are untouched.
+
+### ScriptableObject asset
+- **`Assets/Handball game/Audio/HandballSoundData.asset`** — created and all 8 clips assigned, verified by reloading from disk after saving: `gameplayMusic`→`gameplay_music`, `buttonSound`→`ui_button_click`, `jumpSound`→`Bubble_Pop`, `pickupSound`→`ball_pickup`, `throwSound`→`Throw whoosh`, `ballImpactSound`→`ball_Hit_ground`, `hoopImpactSound`→`hoop_impact`, `goalSound`→`Goal chime`.
+
+### Hierarchy / component changes
+- **`-----Managers------/GameManager`**: added two `AudioSource` components (see settings below); `GameManager`'s `soundData`/`musicAudioSource`/`sfxAudioSource` fields wired to the new asset and the two sources (confirmed via component read-back).
+- **`Player`**: `PlayerThrowController.followCamera` wired to `Main Camera`'s `ThirdPersonCameraFollow` (confirmed via component read-back).
+- Scene-wide check after all changes: **1 `AudioListener`, exactly 2 `AudioSource`s** (both on `GameManager`) — confirmed via script query.
+
+### AudioSource settings
+| | MusicAudioSource | SfxAudioSource |
+|---|---|---|
+| Play On Awake | Off | Off |
+| Loop | On | Off |
+| Spatial Blend | 0 | 0 |
+| Volume | 0.4 | 0.85 |
+
+### Audio import settings
+- **Short SFX** (`ui_button_click.ogg`, `ball_pickup.ogg`, `hoop_impact.ogg`, and the three reused existing clips `Bubble_Pop.mp3`/`Throw whoosh.mp3`/`ball_Hit_ground.mp3`/`Goal chime.mp3`): Force To Mono On, Load Type = Decompress On Load, Compression Format = ADPCM, Preload Audio Data On (via per-platform sample settings).
+- **`gameplay_music.mp3`**: kept stereo, Load Type = Streaming, Compression Format = Vorbis, Quality ≈ 0.65 (65%). Looping is handled by `MusicAudioSource.loop = true`, not the clip.
+- `Victory (Male voince.mp3` and `Sparkle Tiwinkle.mp3` were **not** touched (unused this pass).
+
+### Event hook locations (summary)
+Jump → `PlayerMovementController.TryPerformJump()` after `Jumped?.Invoke()`. Pickup → `PlayerBallPickup.AttachPendingBall()`. Throw → `PlayerThrowController.ReleasePendingBall()`. Ball/hoop impact → `BallController.OnCollisionEnter` → `TryPlayImpactSound`. Goal + vibration → `HoopGoalDetector.ConfirmGoal()`. Button → `GameManager.Restart()` (the only "normal UI button" in the current scene — Throw/Jump buttons already have their own dedicated sounds, so a generic click on them would duplicate/clutter per the "no separate button sounds" constraint; wiring `GameManager.PlayButtonSound()` to any future non-gameplay UI button is a one-line OnClick addition). Music → `GameManager.Start()`, once.
+
+### Feedback added
+1. **Throw camera impulse** — `ThirdPersonCameraFollow.PlayThrowImpulse()`, reusing the existing shake system, much weaker/shorter than the goal shake, called at real release.
+2. **Existing goal camera shake** — unchanged, still `PlayGoalShake()`.
+3. **Goal vibration** — `Handheld.Vibrate()` in `ConfirmGoal()`, mobile-only (`#if UNITY_ANDROID || UNITY_IOS`), fires once per confirmed goal, never on ball collisions.
+
+### Tests performed (static/automated only)
+- All 5 modified scripts + the new ScriptableObject compile cleanly (`assets-refresh` + `console-get-logs`, no errors) — checked after an interruption mid-pass specifically to confirm `PlayerMovementController.cs`/`PlayerBallPickup.cs` weren't left partially edited (they weren't; `git diff` showed clean, complete single-line insertions).
+- `HandballSoundData.asset`'s 8 clip assignments confirmed by reloading the asset from disk after saving.
+- `GameManager`'s 3 audio references and `PlayerThrowController.followCamera` confirmed via component read-back after wiring (the first attempt via one modification surface silently no-opped on component-typed fields; retried via the `componentDiff` surface, which worked and was verified).
+- Scene-wide `AudioListener`/`AudioSource` count confirmed via script query: 1 listener, 2 sources, both correctly configured.
+
+### Tests NOT performed — Play Mode is not accessible to me in this session
+No sound has been heard, no vibration triggered, no camera impulse observed. **Manual verification required before this is considered complete:**
+1. Gameplay music starts once, loops, and does not duplicate after a ball reset.
+2. Button sound plays once (Restart).
+3. Jump sound plays only after a successful jump (not on a failed jump-button press).
+4. Pickup sound plays once when the ball reaches the hand.
+5. Throw sound plays at actual release.
+6. Ball impact sound doesn't spam while rolling.
+7. Hoop impact uses the hoop sound, not the general ball impact sound.
+8. Goal sound plays once per confirmed goal; goal vibration fires once (device/mobile build only).
+9. Throw camera impulse is small, doesn't drift or accumulate; existing goal shake still works.
+10. Pickup, aiming, trajectory, and throwing still work exactly as before.
+11. Scoring and ball reset still work.
+12. Console stays clean; exactly 1 `AudioListener`; exactly the 2 intended `AudioSource`s.
+
+### Known limitations
+- `gameplay_music.mp3` is a real song ("Monkeys Spinning Monkeys"), not a custom-composed seamless loop — there will likely be a small audible seam where it loops back to the start. Trimming/crossfading a proper loop point was not attempted this pass (would need audio editing tools not available here); flag if a tighter loop is wanted.
+- The reused existing clips (`ball_Hit_ground.mp3`, `Throw whoosh.mp3`, `Goal chime.mp3`, `Bubble_Pop.mp3`) have no recorded original source/license anywhere in the project; their provenance could not be verified this pass even though they're already in use.
+- `Victory (Male voince.mp3` and `Sparkle Tiwinkle.mp3` remain in the project, unused — left as-is per "do not perform unrelated cleanup."
+
+### Rollback instructions
+1. **Scripts**: copy the six `.bak` files from `.backup/2026-07-29-audio-pass1/` back over their originals (`GameManager.cs`, `PlayerMovementController.cs`, `PlayerBallPickup.cs`, `PlayerThrowController.cs`, `BallController.cs`, `HoopGoalDetector.cs`, `ThirdPersonCameraFollow.cs`).
+2. **Scene**: restore `.backup/2026-07-29-audio-pass1/SampleScene.unity.bak` to remove the two `AudioSource`s and all the new reference wiring in one step (or manually remove the two `AudioSource` components from `GameManager` and clear the three audio fields).
+3. **New assets**: delete `Assets/Handball game/Scripts/Audio/HandballSoundData.cs`, `Assets/Handball game/Audio/` (asset + Music/ + SFX/ + AudioLicenses.md) if a full revert is wanted. The reused pre-existing clips in `Assets/Music and SFX/` are untouched by this rollback either way.
+4. Reload the scene (or restart the Editor) after any script rollback to force recompilation.
+
+---
+
 ## [In Progress] Aim trajectory & camera framing rework
 Scoped, in-flight work. Sound effects, camera bob/shake polish, and other demo features are intentionally paused for this pass — only the aim trajectory visuals and aim camera framing are being touched. **Status: four passes in so far — (1) initial chevron-mesh + camera rework, (2) a world/local mesh-space position bug found and fixed, (3) a visual-match correction that turned out to have its own bugs (red material, spike shape), (4) a chevron mesh-topology fix + camera composition rewrite — see "Correction pass 3" below for the latest. Round-4 manual re-verification by the user is still pending; do not consider this task complete until that's confirmed.**
 

@@ -81,6 +81,13 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
         new Keyframe(1f, 0f)
     );
 
+    [Header("Throw Camera Impulse")]
+    [Tooltip("Much shorter/weaker than the goal shake — reuses the same shake system, does not add a new one.")]
+    [SerializeField, Min(0.01f)] private float throwImpulseDuration = 0.12f;
+
+    [SerializeField] private Vector3 throwImpulsePositionShake = new Vector3(0.02f, 0.015f, 0.01f);
+    [SerializeField] private Vector3 throwImpulseRotationShake = new Vector3(0.3f, 0.35f, 0.15f);
+
     [Header("Deprecated")]
     [HideInInspector]
     [SerializeField]
@@ -420,6 +427,13 @@ public sealed class ThirdPersonCameraFollow : MonoBehaviour
     public void PlayGoalShake()
     {
         PlayCameraShake(goalShakeDuration, goalPositionShake, goalRotationShake);
+    }
+
+    // Much weaker/shorter than the goal shake, reuses the same shake system (no new component,
+    // no accumulation — PlayCameraShake always starts a fresh, time-bounded shake).
+    public void PlayThrowImpulse()
+    {
+        PlayCameraShake(throwImpulseDuration, throwImpulsePositionShake, throwImpulseRotationShake);
     }
 
     public void PlayCameraShake(

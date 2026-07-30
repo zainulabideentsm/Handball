@@ -515,6 +515,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 2310928506672053965, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
     - target: {fileID: 2531693971132718940, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -555,10 +559,38 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 3142893732806627909, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
+    - target: {fileID: 3478456513627251979, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
+    - target: {fileID: 3688087356155040981, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
+    - target: {fileID: 4669832378299317784, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
+    - target: {fileID: 6258127457267084877, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
     - target: {fileID: 7272399098962240272, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
       propertyPath: m_Name
       value: Character It_happy
       objectReference: {fileID: 0}
+    - target: {fileID: 7397388319276219605, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
+    - target: {fileID: 8534564304459406443, guid: ee17558b80e863a428a2bd63030f3d9c, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: 3f9995eb84f84691b9c0e8d1859be3d0, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

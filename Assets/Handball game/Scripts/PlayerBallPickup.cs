@@ -1,13 +1,24 @@
 using UnityEngine;
 
 [DisallowMultipleComponent]
-[RequireComponent(typeof(SphereCollider))]
 public sealed class PlayerBallPickup : MonoBehaviour
 {
-    [Header("Player References")]
+    [Header("Required Player References")]
     [SerializeField] private PlayerMovementController playerMovement;
     [SerializeField] private PlayerAnimationController animationController;
+    [SerializeField] private PlayerAudioController playerAudio;
     [SerializeField] private Transform ballHoldPoint;
+
+    [Header("Pickup Trigger")]
+    [Tooltip("Assign the SphereCollider on this BallPickupTrigger object.")]
+    [SerializeField] private SphereCollider pickupCollider;
+
+    [Header("Ball References")]
+    [Tooltip("Assign the scene BallController.")]
+    [SerializeField] private BallController pickupBall;
+
+    [Tooltip("Assign the main Collider from the same ball.")]
+    [SerializeField] private Collider pickupBallCollider;
 
     [Header("UI References")]
     [SerializeField] private GameObject fixedJoystick;
@@ -21,11 +32,30 @@ public sealed class PlayerBallPickup : MonoBehaviour
     public bool IsPickingUp => pendingBall != null;
 
     private BallController pendingBall;
-    private SphereCollider pickupCollider;
 
     private void Awake()
     {
-        pickupCollider = GetComponent<SphereCollider>();
+        if (pickupCollider == null)
+        {
+            Debug.LogError("PlayerBallPickup: Pickup Collider is not assigned.", this);
+            enabled = false;
+            return;
+        }
+
+        if (pickupBall == null)
+        {
+            Debug.LogError("PlayerBallPickup: Pickup Ball is not assigned.", this);
+            enabled = false;
+            return;
+        }
+
+        if (pickupBallCollider == null)
+        {
+            Debug.LogError("PlayerBallPickup: Pickup Ball Collider is not assigned.", this);
+            enabled = false;
+            return;
+        }
+
         pickupCollider.isTrigger = true;
 
         if (fixedJoystick != null)
@@ -38,38 +68,30 @@ public sealed class PlayerBallPickup : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (HasBall || IsPickingUp)
+        if (HasBall || IsPickingUp || other != pickupBallCollider)
         {
             return;
         }
 
-        BallController ball = other.GetComponentInParent<BallController>();
-
-        if (ball == null || !ball.TryBeginPickup())
+        if (!pickupBall.TryBeginPickup())
         {
             return;
         }
 
-        pendingBall = ball;
+        pendingBall = pickupBall;
 
-        if (animationController != null)
-        {
-            animationController.PlayPickup();
-        }
-
+        animationController?.PlayPickup();
         BeginPickupSequence();
     }
 
     private void BeginPickupSequence()
     {
-        // Stop only during the pickup animation.
         if (playerMovement != null)
         {
             playerMovement.SetAimMovementMode(false);
             playerMovement.SetMovementEnabled(false);
         }
 
-        // Joystick remains visible.
         if (fixedJoystick != null)
         {
             fixedJoystick.SetActive(true);
@@ -79,7 +101,7 @@ public sealed class PlayerBallPickup : MonoBehaviour
         pickupCollider.enabled = false;
     }
 
-    // Called by AE_AttachBall on the pickup animation.
+    // Called by AE_AttachBall.
     public void AttachPendingBall()
     {
         if (pendingBall == null || ballHoldPoint == null)
@@ -95,7 +117,8 @@ public sealed class PlayerBallPickup : MonoBehaviour
         HeldBall = pendingBall;
         pendingBall = null;
 
-        // Enter slow aim movement before re-enabling movement.
+        playerAudio?.PlayPickup();
+
         if (playerMovement != null)
         {
             playerMovement.SetAimMovementMode(true);
@@ -115,7 +138,11 @@ public sealed class PlayerBallPickup : MonoBehaviour
         HeldBall = null;
         pendingBall = null;
 
-        pickupCollider.enabled = true;
+        if (pickupCollider != null)
+        {
+            pickupCollider.enabled = true;
+        }
+
         SetAimVisuals(false);
 
         if (fixedJoystick != null)
@@ -126,9 +153,6 @@ public sealed class PlayerBallPickup : MonoBehaviour
         if (playerMovement != null)
         {
             playerMovement.SetAimMovementMode(false);
-
-            // Return to normal movement, but require the joystick
-            // to be released before running again.
             playerMovement.SetMovementEnabled(true, true);
         }
     }
@@ -143,16 +167,6 @@ public sealed class PlayerBallPickup : MonoBehaviour
         if (trajectoryPreview != null)
         {
             trajectoryPreview.SetActive(visible);
-        }
-    }
-
-    private void OnDisable()
-    {
-        pendingBall = null;
-
-        if (playerMovement != null)
-        {
-            playerMovement.SetAimMovementMode(false);
         }
     }
 }

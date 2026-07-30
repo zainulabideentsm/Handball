@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5f6db6b2fee23294d95c8434550875a5, type: 3}
+  m_Name: HandballSoundData
+  m_EditorClassIdentifier: 
+  gameplayMusic: {fileID: 8300000, guid: eb27c4c8ce4184d41817957c30db5ba8, type: 3}
+  buttonSound: {fileID: 8300000, guid: ddadd820785084d4c97002f0a92e4a00, type: 3}
+  jumpSound: {fileID: 8300000, guid: 51c4527f43d944d43b090973363f2d22, type: 3}
+  pickupSound: {fileID: 8300000, guid: 729ab3057729a8d4d894b82234115fcc, type: 3}
+  throwSound: {fileID: 8300000, guid: 41e2712ec6598d44f8cb058fd3646fdf, type: 3}
+  ballImpactSound: {fileID: 8300000, guid: 37a715ee8dac0194dbf8d6451f7b0de0, type: 3}
+  hoopImpactSound: {fileID: 8300000, guid: c0a2b5b808c485246a57b3023b8e4f11, type: 3}
+  goalSound: {fileID: 8300000, guid: 219cc65f8dee44747b958c0abd3be9bd, type: 3}
