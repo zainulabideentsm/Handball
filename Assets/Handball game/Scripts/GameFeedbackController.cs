@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 public sealed class GameFeedbackController : MonoBehaviour
@@ -8,7 +9,7 @@ public sealed class GameFeedbackController : MonoBehaviour
     [SerializeField] private ThirdPersonCameraFollow followCamera;
     [SerializeField] private Camera gameplayCamera;
 
-    [Header("Run Speed Lines")]
+    [Header("Speed Boost Lines")]
     [SerializeField] private CanvasGroup speedLinesCanvasGroup;
     [SerializeField] private RectTransform speedLinesTransform;
 
@@ -20,20 +21,16 @@ public sealed class GameFeedbackController : MonoBehaviour
     [SerializeField] private ParticleSystem ballImpactParticles;
     [SerializeField] private ParticleSystem hoopImpactParticles;
 
-    [Header("Maximum-Speed Feedback")]
-    [SerializeField, Range(0f, 1f)] private float runEffectStart = 0.78f;
-    [SerializeField, Min(0f)] private float maximumRunFovBoost = 7f;
-    [SerializeField, Range(0.01f, 0.5f)] private float runEffectSmoothTime = 0.12f;
+    [Header("Speed Boost Feedback")]
+    [FormerlySerializedAs("maximumRunFovBoost")]
+    [SerializeField, Min(0f)] private float speedBoostFovBoost = 7f;
+
+    [FormerlySerializedAs("runEffectSmoothTime")]
+    [SerializeField, Range(0.01f, 0.5f)] private float speedBoostSmoothTime = 0.12f;
+
     [SerializeField, Range(0f, 1f)] private float speedLinesMaximumAlpha = 0.65f;
     [SerializeField, Range(0.5f, 2f)] private float speedLinesMinimumScale = 1f;
     [SerializeField, Range(0.5f, 2f)] private float speedLinesMaximumScale = 1.08f;
-
-    [SerializeField]
-    private AnimationCurve runEffectCurve = new AnimationCurve(
-        new Keyframe(0f, 0f),
-        new Keyframe(0.4f, 0.15f),
-        new Keyframe(1f, 1f)
-    );
 
     [Header("Speed Lines Animation")]
     [SerializeField, Min(0f)] private float speedLinesAnimationSpeed = 1.5f;
@@ -66,13 +63,16 @@ public sealed class GameFeedbackController : MonoBehaviour
     [Header("FOV Pulse Recovery")]
     [SerializeField, Min(0.1f)] private float fovPulseReturnSpeed = 10f;
 
+    public bool IsSpeedBoostFeedbackActive => speedBoostTargetIntensity > 0.001f;
+
     private float baseFieldOfView;
     private float currentFieldOfView;
     private float fieldOfViewVelocity;
     private float fieldOfViewPulse;
 
-    private float runIntensity;
-    private float runIntensityVelocity;
+    private float speedBoostIntensity;
+    private float speedBoostTargetIntensity;
+    private float speedBoostVelocity;
 
     private Vector2 speedLinesBasePosition;
     private Quaternion speedLinesBaseRotation;
@@ -130,43 +130,29 @@ public sealed class GameFeedbackController : MonoBehaviour
     {
         float deltaTime = Time.deltaTime;
 
-        UpdateRunFeedback(deltaTime);
+        UpdateSpeedBoostFeedback(deltaTime);
         UpdateFieldOfView(deltaTime);
         UpdateScorePulse(Time.unscaledDeltaTime);
     }
 
-    private void UpdateRunFeedback(float deltaTime)
+    private void UpdateSpeedBoostFeedback(float deltaTime)
     {
-        bool canShowRunEffect =
-            playerMovement != null &&
-            playerMovement.MovementEnabled &&
-            playerMovement.IsGrounded &&
-            !playerMovement.IsAimMovementMode;
-
-        float normalizedSpeed = canShowRunEffect
-            ? playerMovement.NormalizedSpeed
-            : 0f;
-
-        float targetIntensity = Mathf.InverseLerp(
-            runEffectStart,
-            1f,
-            normalizedSpeed
-        );
-
-        runIntensity = Mathf.SmoothDamp(
-            runIntensity,
-            targetIntensity,
-            ref runIntensityVelocity,
-            runEffectSmoothTime,
+        speedBoostIntensity = Mathf.SmoothDamp(
+            speedBoostIntensity,
+            speedBoostTargetIntensity,
+            ref speedBoostVelocity,
+            speedBoostSmoothTime,
             Mathf.Infinity,
             deltaTime
         );
 
-        float shapedIntensity = runEffectCurve != null
-            ? runEffectCurve.Evaluate(runIntensity)
-            : runIntensity;
+        if (speedBoostTargetIntensity <= 0f && speedBoostIntensity <= 0.001f)
+        {
+            speedBoostIntensity = 0f;
+            speedBoostVelocity = 0f;
+        }
 
-        UpdateSpeedLines(shapedIntensity);
+        UpdateSpeedLines(speedBoostIntensity);
     }
 
     private void UpdateFieldOfView(float deltaTime)
@@ -176,20 +162,16 @@ public sealed class GameFeedbackController : MonoBehaviour
             return;
         }
 
-        float shapedRunIntensity = runEffectCurve != null
-            ? runEffectCurve.Evaluate(runIntensity)
-            : runIntensity;
-
         float targetFieldOfView =
             baseFieldOfView +
-            maximumRunFovBoost * shapedRunIntensity +
+            speedBoostFovBoost * speedBoostIntensity +
             fieldOfViewPulse;
 
         currentFieldOfView = Mathf.SmoothDamp(
             currentFieldOfView,
             targetFieldOfView,
             ref fieldOfViewVelocity,
-            runEffectSmoothTime,
+            speedBoostSmoothTime,
             Mathf.Infinity,
             deltaTime
         );
@@ -223,7 +205,6 @@ public sealed class GameFeedbackController : MonoBehaviour
         if (speedLinesTransform != null)
         {
             float animationTime = Time.unscaledTime * speedLinesAnimationSpeed;
-
             float pulse = Mathf.Sin(animationTime * Mathf.PI * 2f);
             float horizontalDrift = Mathf.Sin(animationTime * 0.8f);
             float verticalDrift = Mathf.Cos(animationTime * 0.65f);
@@ -269,6 +250,21 @@ public sealed class GameFeedbackController : MonoBehaviour
             speedLinesVisible = false;
             ResetSpeedLinesTransform();
         }
+    }
+
+    public void StartSpeedBoostFeedback()
+    {
+        speedBoostTargetIntensity = 1f;
+    }
+
+    public void StopSpeedBoostFeedback()
+    {
+        speedBoostTargetIntensity = 0f;
+    }
+
+    public void SetSpeedBoostFeedbackIntensity(float intensity)
+    {
+        speedBoostTargetIntensity = Mathf.Clamp01(intensity);
     }
 
     public void PlayJumpFeedback()
@@ -443,8 +439,9 @@ public sealed class GameFeedbackController : MonoBehaviour
 
     public void ResetFeedback()
     {
-        runIntensity = 0f;
-        runIntensityVelocity = 0f;
+        speedBoostIntensity = 0f;
+        speedBoostTargetIntensity = 0f;
+        speedBoostVelocity = 0f;
 
         fieldOfViewPulse = 0f;
         fieldOfViewVelocity = 0f;

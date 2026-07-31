@@ -2348,7 +2348,7 @@ PrefabInstance:
     - target: {fileID: -4414147876799292325, guid: 2e32c87def7bdab468561f20d5dfe7f5, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 2100000, guid: 2a21991b4884b3d49b145889f71e6a77, type: 2}
+      objectReference: {fileID: 2100000, guid: c45bb365210ca4644924dce774197793, type: 2}
     - target: {fileID: -2766037116575061823, guid: 2e32c87def7bdab468561f20d5dfe7f5, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
@@ -4261,45 +4261,11 @@ MonoBehaviour:
   landingParticles: {fileID: 0}
   ballImpactParticles: {fileID: 0}
   hoopImpactParticles: {fileID: 0}
-  runEffectStart: 0.78
-  maximumRunFovBoost: 5
-  runEffectSmoothTime: 0.12
+  speedBoostFovBoost: 5
+  speedBoostSmoothTime: 0.12
   speedLinesMaximumAlpha: 0.65
   speedLinesMinimumScale: 1
   speedLinesMaximumScale: 1.08
-  runEffectCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 0.4
-      value: 0.15
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 0
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
   speedLinesAnimationSpeed: 1.5
   speedLinesPulseAmount: 0.025
   speedLinesDriftAmount: {x: 4, y: 2}
@@ -4728,7 +4694,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 5f36c30ff1b7ba94e88d19b84b2a17ca, type: 2}
+  - {fileID: 2100000, guid: 2a21991b4884b3d49b145889f71e6a77, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
